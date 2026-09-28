@@ -133,7 +133,7 @@ def test_nvidia_provider_configuration_and_disabled_by_default() -> None:
     async def run_no_model() -> None:
         with pytest.raises(System2NotConfiguredError) as exc_info:
             await client_no_model.generate(GenerationRequest(prompt="test"))
-        assert "NVIDIA_AI_MODEL is unset" in str(exc_info.value)
+        assert "NVIDIA_MODEL is unset" in str(exc_info.value)
     asyncio.run(run_no_model())
 
 
@@ -235,7 +235,8 @@ def test_nvidia_provider_malformed_response_handling() -> None:
             nvidia_ai_enabled=True,
             nvidia_ai_provider="nvidia",
             nvidia_ai_model="meta/llama-3.2-11b-vision-instruct",
-        )
+         nvidia_ai_api_key="test-key"
+            )
         client = System2Client(settings, transport=httpx.MockTransport(empty_choices_handler))
         with pytest.raises(System2ContractError):
             await client.generate(GenerationRequest(prompt="hello"))

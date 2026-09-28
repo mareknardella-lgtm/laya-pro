@@ -94,12 +94,12 @@ class HybridOrchestrator:
         """LOW: Utente -> Nemotron -> Risposta"""
         if not self._system2.runtime_configured:
             return ChatResponse(
-                text="Il provider Nemotron (System 2) non è configurato.",
+                text="The Nemotron provider (System 2) is not configured.",
                 requested_mode="LOW",
                 executed_mode="NONE",
                 providers_used=[],
                 status="error",
-                error_message="Nemotron (System 2) non disponibile."
+                error_message="Nemotron (System 2) unavailable."
             )
 
         gen_req = GenerationRequest(
@@ -118,9 +118,9 @@ class HybridOrchestrator:
                 metadata={"engine": gen_res.engine, "request_id": gen_res.request_id}
             )
         except Exception as e:
-            logger.error(f"Errore Nemotron in modalità LOW: {e}")
+            logger.error(f"Nemotron error in LOW mode: {e}")
             return ChatResponse(
-                text="Si è verificato un errore durante la generazione della risposta.",
+                text="An error occurred during response generation.",
                 requested_mode="LOW",
                 executed_mode="LOW",
                 providers_used=["nemotron"],
@@ -134,7 +134,7 @@ class HybridOrchestrator:
             plan = await self._jev.analyze_and_plan(request.message)
         except JEVUnavailable as e:
             return ChatResponse(
-                text="Modalità MEDIUM non disponibile: manca il collegamento al motore JEV.",
+                text="MEDIUM mode unavailable: JEV engine connection missing.",
                 requested_mode="MEDIUM",
                 executed_mode="NONE",
                 providers_used=[],
@@ -143,7 +143,7 @@ class HybridOrchestrator:
             )
         except Exception as e:
             return ChatResponse(
-                text="Errore durante l'analisi JEV.",
+                text="Error during JEV analysis.",
                 requested_mode="MEDIUM",
                 executed_mode="NONE",
                 providers_used=["jev"],
@@ -153,11 +153,11 @@ class HybridOrchestrator:
 
         # Costruiamo il prompt per Nemotron basato sul piano
         prompt = (
-            f"L'utente ha chiesto: {request.message}\n\n"
-            f"Il sistema di ragionamento (JEV) ha prodotto il seguente piano:\n"
-            f"- Intento: {plan.intent}\n"
-            f"- Strategia: {plan.strategy}\n"
-            f"Genera una risposta naturale e utile per l'utente seguendo questa strategia."
+            f"The user asked: {request.message}\n\n"
+            f"The reasoning system (JEV) produced the following plan:\n"
+            f"- Intent: {plan.intent}\n"
+            f"- Strategy: {plan.strategy}\n"
+            f"Generate a natural and useful response for the user following this strategy."
         )
 
         gen_req = GenerationRequest(prompt=prompt, context={"mode": "MEDIUM"})
@@ -173,7 +173,7 @@ class HybridOrchestrator:
             )
         except Exception as e:
             return ChatResponse(
-                text="Errore durante la generazione della risposta finale.",
+                text="Error during final response generation.",
                 requested_mode="MEDIUM",
                 executed_mode="MEDIUM",
                 providers_used=["jev", "nemotron"],
@@ -187,7 +187,7 @@ class HybridOrchestrator:
             plan = await self._jev.analyze_and_plan(request.message, context={"depth": "hard"})
         except JEVUnavailable as e:
             return ChatResponse(
-                text="Modalità HARD non disponibile: manca il collegamento al motore JEV.",
+                text="HARD mode unavailable: JEV engine connection missing.",
                 requested_mode="HARD",
                 executed_mode="NONE",
                 providers_used=[],
@@ -196,7 +196,7 @@ class HybridOrchestrator:
             )
         except Exception as e:
             return ChatResponse(
-                text="Errore durante l'analisi profonda JEV.",
+                text="Error during deep JEV analysis.",
                 requested_mode="HARD",
                 executed_mode="NONE",
                 providers_used=["jev"],
@@ -208,10 +208,10 @@ class HybridOrchestrator:
         criteria_text = "\n".join(f"- {c}" for c in plan.validation_criteria)
 
         prompt = (
-            f"L'utente ha chiesto: {request.message}\n\n"
-            f"Il sistema di ragionamento (JEV) ha elaborato un piano dettagliato:\n"
-            f"Passaggi:\n{steps_text}\n\n"
-            f"Criteri di validazione:\n{criteria_text}\n\n"
+            f"The user asked: {request.message}\n\n"
+            f"The reasoning system (JEV) elaborated a detailed plan:\n"
+            f"Steps:\n{steps_text}\n\n"
+            f"Validation criteria:\n{criteria_text}\n\n"
             f"Redigi la risposta finale per l'utente attenendoti strettamente a questi passaggi e criteri. "
             f"Non inventare informazioni aggiuntive. Limitati a trasformare questo piano in una risposta fluida."
         )
@@ -229,7 +229,7 @@ class HybridOrchestrator:
             )
         except Exception as e:
             return ChatResponse(
-                text="Errore durante la generazione della risposta finale.",
+                text="Error during final response generation.",
                 requested_mode="HARD",
                 executed_mode="HARD",
                 providers_used=["jev", "nemotron"],

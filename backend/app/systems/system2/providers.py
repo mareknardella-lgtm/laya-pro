@@ -131,7 +131,10 @@ class NvidiaAiProvider:
         if not self._settings.nvidia_ai_enabled:
             raise System2NotConfiguredError("NVIDIA AI provider is disabled (NVIDIA_AI_ENABLED=false)")
         if not self._settings.nvidia_ai_model:
-            raise System2NotConfiguredError("NVIDIA AI model is not configured (NVIDIA_AI_MODEL is unset)")
+            raise System2NotConfiguredError("NVIDIA AI model is not configured (NVIDIA_MODEL is unset)")
+        if not self._settings.nvidia_ai_api_key:
+            raise System2NotConfiguredError("NVIDIA API key is missing. Please configure NVIDIA_API_KEY in the environment.")
+
         if len(request.prompt) > self._settings.system2_max_input_chars:
             raise System2ContractError("Prompt exceeds the configured System 2 input limit")
 
