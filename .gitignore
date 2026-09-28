@@ -1,0 +1,72 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Testing & Type Checking
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.nox/
+.tox/
+
+# Local environments & Virtual Envs
+.env
+.env.*
+!.env.example
+.venv/
+.venv*/
+venv/
+env/
+ENV/
+
+# Secrets, Keys, Credentials
+*.pem
+*.key
+*token*.txt
+api_key*.txt
+api key*.txt
+
+# Local Laya Pro Runtime Data & Databases
+backend/data/
+*.sqlite3
+*.sqlite3-shm
+*.sqlite3-wal
+*.laya-backup/
+
+# Node / Frontend
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS / Editor Artifacts
+.DS_Store
+Thumbs.db
+desktop.ini
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+*.sublime-workspace
+*.sublime-project

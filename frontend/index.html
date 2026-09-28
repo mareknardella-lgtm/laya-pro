@@ -1,0 +1,207 @@
+﻿<!doctype html>
+<html lang="it">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light" />
+    <meta name="theme-color" content="#f4f5f7" />
+    <title>Laya Pro · Centro di Controllo Operatore</title>
+    <link rel="stylesheet" href="/dashboard/styles.css?v=4" />
+    <script src="/dashboard/app.js?v=4" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">Salta al contenuto principale</a>
+
+    <!-- Schermata iniziale di consenso / benvenuto -->
+    <div class="welcome-screen" id="welcome-screen" role="region" aria-label="Benvenuto in Laya Pro">
+      <div class="welcome-container">
+        <div class="welcome-card">
+          <div class="welcome-header">
+            <span class="welcome-badge">LOCAL-FIRST AI ASSISTANT</span>
+            <div class="welcome-brand">
+              <span class="brand-mark" aria-hidden="true">L</span>
+              <div class="welcome-brand-text">
+                <span class="welcome-title-sub">OPERATOR DESK</span>
+                <span class="welcome-title-main">Laya Pro</span>
+              </div>
+            </div>
+            <h1 class="welcome-heading">Benvenuto in Laya Pro</h1>
+            <p class="welcome-intro">
+              Laya Pro desidera collegarsi al backend locale per consentirti di utilizzare le funzionalità dell'assistente. La connessione avviene sul tuo dispositivo.
+            </p>
+          </div>
+
+          <div class="welcome-summary">
+            <h2 class="welcome-summary-title">Riepilogo delle funzionalità autorizzate</h2>
+            <ul class="welcome-features">
+              <li class="welcome-feature-item">
+                <span class="feature-icon" aria-hidden="true">⌁</span>
+                <div>
+                  <strong>Connessione al backend locale</strong>
+                  <small>Comunicazione ad anello chiuso su loopback (127.0.0.1) protetta da CSRF e isolata da origini esterne.</small>
+                </div>
+              </li>
+              <li class="welcome-feature-item">
+                <span class="feature-icon" aria-hidden="true">◉</span>
+                <div>
+                  <strong>Comunicazione con System 1</strong>
+                  <small>Verifica dello stato del runtime locale Laya per la generazione affidabile di decisioni e routing.</small>
+                </div>
+              </li>
+              <li class="welcome-feature-item">
+                <span class="feature-icon" aria-hidden="true">◫</span>
+                <div>
+                  <strong>Accesso alle funzionalità del dashboard</strong>
+                  <small>Visualizzazione dello stato del sistema, dei progetti configurati e della cronologia delle esecuzioni.</small>
+                </div>
+              </li>
+              <li class="welcome-feature-item">
+                <span class="feature-icon" aria-hidden="true">◎</span>
+                <div>
+                  <strong>Utilizzo delle autorizzazioni previste dal sistema</strong>
+                  <small>Gestione delle approvazioni con supervisione umana obbligatoria (Human-in-the-loop) per operazioni sensibili.</small>
+                </div>
+              </li>
+            </ul>
+          </div>
+
+          <div class="welcome-status-box" id="welcome-status-box" hidden>
+            <div class="welcome-status-indicator">
+              <span class="spinner" id="welcome-spinner" aria-hidden="true"></span>
+              <span id="welcome-status-text">Connessione in corso...</span>
+            </div>
+            <div class="welcome-error-detail" id="welcome-error-detail" hidden></div>
+          </div>
+
+          <div class="welcome-actions">
+            <button class="button button-quiet" type="button" id="consent-exit">Esci</button>
+            <button class="button button-primary" type="button" id="consent-connect">Accetta e connetti</button>
+          </div>
+
+          <div class="welcome-footer-note">
+            <span class="footer-lock" aria-hidden="true">▣</span>
+            Nessun segreto o token viene salvato nel browser. Le credenziali rimangono esclusivamente nella memoria temporanea.
+          </div>
+        </div>
+
+        <div class="welcome-exit-card" id="welcome-exit-card" hidden>
+          <div class="welcome-exit-icon" aria-hidden="true">⏻</div>
+          <h2>Sessione non avviata</h2>
+          <p>La procedura di connessione è stata interrotta. Nessuna connessione al backend è attiva e nessun dato è stato trasferito.</p>
+          <button class="button button-primary" type="button" id="consent-retry-exit">Riapri schermata di consenso</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Dashboard Shell (mostrata dopo il consenso) -->
+    <div class="app-shell" id="app-shell" hidden>
+      <aside class="sidebar" id="sidebar" aria-label="Primary navigation">
+        <a class="brand" href="#overview" aria-label="Laya Pro control center overview">
+          <span class="brand-mark" aria-hidden="true">L</span>
+          <span class="brand-copy"><strong>LAYA</strong><small>OPERATOR DESK</small></span>
+        </a>
+        <div class="nav-caption">WORKSPACE</div>
+        <nav class="primary-nav">
+          <a href="#overview" data-nav="overview"><span class="nav-icon" aria-hidden="true">🏠</span>Overview</a>
+          <a href="#chat" data-nav="chat"><span class="nav-icon" aria-hidden="true">💬</span>AI Chat</a>
+          <a href="#memory" data-nav="memory"><span class="nav-icon" aria-hidden="true">🧠</span>Memory</a>
+          <a href="#approvals" data-nav="approvals"><span class="nav-icon" aria-hidden="true">✓</span>Approvals<span class="nav-count" id="approval-count" hidden>0</span></a>
+          <a href="#workflows" data-nav="workflows"><span class="nav-icon" aria-hidden="true">⚡</span>Workflows</a>
+          <a href="#executions" data-nav="executions"><span class="nav-icon" aria-hidden="true">🕒</span>Execution history</a>
+          <a href="#status" data-nav="status"><span class="nav-icon" aria-hidden="true">🩺</span>System status</a>
+        </nav>
+        <div class="sidebar-spacer"></div>
+        <div class="sidebar-note">
+          <span class="local-dot" aria-hidden="true"></span>
+          <div><strong>Local-first</strong><small>Connected to this backend only</small></div>
+        </div>
+        <a class="settings-link" href="#settings" data-nav="settings"><span class="nav-icon" aria-hidden="true">⚙️</span>Settings</a>
+        <div class="sidebar-footer">Laya Pro <span id="app-version">operator</span></div>
+      </aside>
+
+      <div class="workspace">
+        <header class="topbar">
+          <button class="mobile-menu icon-button" id="mobile-menu" type="button" aria-label="Open navigation" aria-expanded="false">☰</button>
+          <div class="topbar-context"><span class="topbar-kicker">LOCAL CONTROL PLANE</span><span class="topbar-divider">/</span><span id="topbar-page">Overview</span></div>
+          <div class="project-context" id="project-context" hidden>
+            <label class="field-label" for="project-selector">Project</label>
+            <select class="select-input" id="project-selector" aria-label="Filter operator data by project"><option value="">All authorized projects</option></select>
+          </div>
+          <div class="topbar-actions">
+            <!-- Sezione Stato dei servizi in tempo reale -->
+            <div class="services-health-bar" id="services-health-bar" aria-label="Stato dei servizi">
+              <div class="overall-service-badge" id="overall-service-badge" title="Stato generale dei servizi locali">
+                <span class="health-dot dot-yellow" id="overall-dot" aria-hidden="true"></span>
+                <span id="overall-label">Verifica in corso...</span>
+              </div>
+              <div class="service-pill" id="backend-health-pill" title="Backend FastAPI (http://127.0.0.1:8765)">
+                <span class="health-dot dot-yellow" id="backend-dot" aria-hidden="true"></span>
+                <span class="pill-name">Backend:</span>
+                <strong class="pill-status" id="backend-status-text">Verifica...</strong>
+                <small class="pill-latency" id="backend-latency-text"></small>
+              </div>
+              <div class="service-pill" id="system1-health-pill" title="Laya System 1 (http://127.0.0.1:8000)">
+                <span class="health-dot dot-yellow" id="system1-dot" aria-hidden="true"></span>
+                <span class="pill-name">System 1:</span>
+                <strong class="pill-status" id="system1-status-text">Verifica...</strong>
+                <small class="pill-latency" id="system1-latency-text"></small>
+              </div>
+            </div>
+
+            <span class="connection-status" id="connection-status"><span class="status-dot" aria-hidden="true"></span><span id="connection-label">Session not connected</span></span>
+            <button class="button button-quiet button-small" id="disconnect-button" type="button" title="Disconnetti la sessione operatore e torna alla pagina di consenso">Disconnetti</button>
+          </div>
+        </header>
+
+        <!-- Banner di allerta visiva prioritaria per workflow critici -->
+        <div class="priority-alert-banner" id="priority-alert-banner" role="alert" aria-live="assertive" hidden>
+          <div class="alert-content">
+            <div class="alert-header">
+              <span class="alert-icon" aria-hidden="true">⚠️</span>
+              <div class="alert-title-group">
+                <strong class="alert-title">SYSTEM 1 OFFLINE — WORKFLOW CRITICO INTERROTTO</strong>
+                <span class="alert-sub" id="alert-subtitle">Rilevata interruzione del runtime decisionale durante un'operazione ad alto rischio</span>
+              </div>
+            </div>
+            <div class="alert-details-grid">
+              <div class="alert-item"><dt>Workflow:</dt><dd id="alert-workflow-name">—</dd></div>
+              <div class="alert-item"><dt>ID Esecuzione:</dt><dd id="alert-execution-id">—</dd></div>
+              <div class="alert-item"><dt>Ora rilevamento:</dt><dd id="alert-detected-time">—</dd></div>
+              <div class="alert-item"><dt>Stato System 1:</dt><dd id="alert-system1-state">Offline</dd></div>
+              <div class="alert-item"><dt>Fase in corso:</dt><dd id="alert-workflow-phase">—</dd></div>
+              <div class="alert-item"><dt>Motivo interruzione:</dt><dd id="alert-reason">—</dd></div>
+              <div class="alert-item"><dt>Stato effettivo arresto:</dt><dd id="alert-stop-status">Arresto confermato (in pausa di sicurezza)</dd></div>
+            </div>
+            <div class="alert-actions">
+              <button class="button button-quiet button-small" type="button" id="alert-view-workflow">Visualizza workflow</button>
+              <button class="button button-quiet button-small" type="button" id="alert-ack-btn">Conferma ricezione</button>
+              <button class="button button-quiet button-small" type="button" id="alert-check-system1">Verifica System 1</button>
+              <button class="button button-success button-small" type="button" id="alert-resume-workflow" hidden>Riprendi workflow</button>
+            </div>
+          </div>
+        </div>
+
+        <main id="main-content" tabindex="-1">
+          <div class="page-container" id="page-view" aria-live="polite" aria-busy="false"></div>
+        </main>
+        <footer class="app-footer"><span><span class="footer-lock" aria-hidden="true">▣</span> Loopback service · credentials stay in memory for this tab</span><span id="footer-clock"></span></footer>
+      </div>
+    </div>
+
+    <!-- Dialog di conferma azioni operatore -->
+    <dialog class="dialog" id="confirm-dialog" aria-labelledby="confirm-title">
+      <form id="confirm-form" method="dialog" class="dialog-card">
+        <div class="dialog-eyebrow" id="confirm-eyebrow">OPERATOR CONFIRMATION</div>
+        <h2 id="confirm-title">Confirm action</h2>
+        <p id="confirm-description"></p>
+        <div class="confirmation-summary" id="confirm-summary"></div>
+        <div class="dialog-actions">
+          <button class="button button-quiet" value="cancel" type="button" id="confirm-cancel">Go back</button>
+          <button class="button button-danger" value="confirm" type="submit" id="confirm-submit">Confirm action</button>
+        </div>
+      </form>
+    </dialog>
+
+    <div class="toast-region" id="toast-region" role="status" aria-live="polite" aria-atomic="true"></div>
+  </body>
+</html>
