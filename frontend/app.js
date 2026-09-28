@@ -973,7 +973,7 @@
     }
 
     elements.view.innerHTML = heading('MEMORIA GLOBALE', 'Gestione Memoria', 'Visualizza, modifica o elimina le informazioni apprese dalla Chat AI.') + `
-      <div class="card" style="padding: 24px;">
+      <div class="panel" style="padding: 24px;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
           <h3 style="margin: 0; font: 700 16px var(--display); color: var(--ink);">Ricordi Personali e Preferenze</h3>
           <div class="filter-row">
@@ -1073,7 +1073,7 @@
     let activeSessionId = null;
     
     elements.view.innerHTML = heading('HYBRID AI FRAMEWORK', 'JEV + Nemotron Chat', 'Conversa con il sistema ibrido selezionando la modalità di esecuzione.') + `
-      <div class="card" style="display: grid; grid-template-columns: 280px minmax(0, 1fr); border: none; overflow: hidden; height: 75vh;">
+      <div class="panel" style="display: grid; grid-template-columns: 280px minmax(0, 1fr); border: none; overflow: hidden; height: 75vh;">
         
         <div class="chat-sidebar" style="border-right: 1px solid var(--line); background: rgba(0,0,0,0.2); display: flex; flex-direction: column;">
            <div style="padding: 16px; border-bottom: 1px solid var(--line);">
@@ -1122,12 +1122,16 @@
     let currentMode = 'LOW';
     const modeButtons = document.querySelectorAll('#chat-mode-group .filter-chip');
     modeButtons.forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        modeButtons.forEach(b => b.classList.remove('active'));
-        e.target.classList.add('active');
-        currentMode = e.target.dataset.mode;
-      }, { signal: state.listeners.signal });
-    });
+        btn.addEventListener('click', (e) => {
+          modeButtons.forEach(b => b.classList.remove('active'));
+          e.target.classList.add('active');
+          currentMode = e.target.dataset.mode;
+        }, { signal: state.listeners.signal });
+      });
+
+      if (sessions.length > 0) {
+          loadSession(sessions[0].session_id);
+      }
 
     const appendMessage = (role, text, meta) => {
       const div = document.createElement('div');
@@ -1181,14 +1185,15 @@
        el.addEventListener('click', () => loadSession(el.dataset.id));
     });
 
-    document.getElementById('new-chat-btn').addEventListener('click', async () => {
-       try {
-          const res = await api.post('/chat/sessions', { title: "Nuova Conversazione" });
-          renderChat(); // Reload the whole view to show new session in sidebar
-       } catch (err) {
-          alert("Errore creazione sessione: " + err.message);
-       }
-    });
+          document.getElementById('new-chat-btn').addEventListener('click', async () => {
+         try {
+            const res = await api.post('/chat/sessions', { title: "Nuova Conversazione" });
+            await renderChat();
+            loadSession(res.session_id);
+         } catch (err) {
+            alert("Errore creazione sessione: " + err.message);
+         }
+      });
 
     const sendMessage = async () => {
       const text = input.value.trim();
