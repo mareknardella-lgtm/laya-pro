@@ -23,20 +23,3 @@ class ChatResponse(BaseModel):
     extracted_memories: Optional[int] = None
     retrieved_memories: Optional[int] = None
     metadata: dict[str, Any] = Field(default_factory=dict)
-
-
-class JevPlanStep(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    step_id: str
-    description: str
-    dependencies: list[str] = Field(default_factory=list)
-
-
-class JevPlan(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    intent: str
-    complexity: Literal["low", "medium", "high"]
-    strategy: str
-    steps: list[JevPlanStep] = Field(default_factory=list)
-    validation_criteria: list[str] = Field(default_factory=list)
-

@@ -7,7 +7,6 @@ from pydantic import BaseModel
 
 from ...chat.models import ChatRequest, ChatResponse
 from ...chat.orchestrator import HybridOrchestrator
-from ...chat.jev import JevAdapter
 from ...systems.system2.adapter import System2Adapter
 from ...config import get_settings
 
@@ -20,13 +19,11 @@ from ...chat.memory import ChatMemoryManager
 def get_orchestrator(request: Request) -> HybridOrchestrator:
     settings = get_settings()
     system2 = System2Adapter(settings)
-    jev = JevAdapter(settings)
-    
     # Instantiate managers using app state dependencies
     history = ChatHistoryManager(request.app.state.database.connect())
     memory = ChatMemoryManager(system2, request.app.state.memory_manager)
     
-    return HybridOrchestrator(settings, system2, jev, history, memory)
+    return HybridOrchestrator(settings, system2, request.app.state.laya_adapter, history, memory)
 
 
 class ChatModesResponse(BaseModel):

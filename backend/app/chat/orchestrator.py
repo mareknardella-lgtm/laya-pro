@@ -1,30 +1,25 @@
-from __future__ import annotations
-
 import logging
-from typing import Optional
-
-from .models import ChatRequest, ChatResponse, JevPlan
-from .jev import JevAdapter, JEVUnavailable
-from .history import ChatHistoryManager
-from .memory import ChatMemoryManager
+from .models import ChatRequest, ChatResponse
 from ..systems.system2.adapter import System2Adapter
 from ..systems.system2.models import GenerationRequest
-from ..config import Settings
+from ..systems.laya.adapter import LayaAdapter
+from ..systems.laya.models import DecisionRequest
+from .history import ChatHistoryManager
+from .memory import ChatMemoryManager
 
 logger = logging.getLogger("laya.chat.orchestrator")
 
-
 class HybridOrchestrator:
-    def __init__(self, settings: Settings, system2: System2Adapter, jev_engine: JevAdapter, history: ChatHistoryManager = None, memory: ChatMemoryManager = None) -> None:
+    def __init__(self, settings, system2: System2Adapter, laya_engine: LayaAdapter, history: ChatHistoryManager = None, memory: ChatMemoryManager = None) -> None:
         self._settings = settings
         self._system2 = system2
-        self._jev = jev_engine
+        self._laya = laya_engine
         self._history = history
         self._memory = memory
 
     async def process_message(self, request: ChatRequest) -> ChatResponse:
         mode = request.mode
-        logger.info(f"Ricevuta richiesta chat in modalità {mode} (session: {request.session_id})")
+        logger.info(f"Ricevuta richiesta chat in modalita {mode} (session: {request.session_id})")
 
         # 1. Save user message
         if self._history:
@@ -37,7 +32,7 @@ class HybridOrchestrator:
             
         context_str = ""
         retrieved_count = 0
-        if self._memory:
+        if self._memory and request.auto_memory:
             context_str = await self._memory.retrieve_context(request.message, past_msgs)
             if context_str:
                 retrieved_count = 1
@@ -129,35 +124,36 @@ class HybridOrchestrator:
             )
 
     async def _process_medium(self, request: ChatRequest) -> ChatResponse:
-        """MEDIUM: Utente -> JEV -> Piano -> Nemotron -> Risposta"""
-        try:
-            plan = await self._jev.analyze_and_plan(request.message)
-        except JEVUnavailable as e:
+        """MEDIUM: Utente -> Laya -> Nemotron -> Risposta"""
+        if not self._laya.runtime_configured:
             return ChatResponse(
-                text="MEDIUM mode unavailable: JEV engine connection missing.",
+                text="MEDIUM mode unavailable: Laya engine connection missing.",
                 requested_mode="MEDIUM",
                 executed_mode="NONE",
                 providers_used=[],
                 status="error",
-                error_message=str(e)
+                error_message="Laya (System 1) not configured."
             )
+            
+        try:
+            decision_env = await self._laya.decide(DecisionRequest(user_input=request.message, context={"mode": "MEDIUM"}))
+            decision = decision_env.decision
         except Exception as e:
             return ChatResponse(
-                text="Error during JEV analysis.",
+                text="Error during Laya analysis.",
                 requested_mode="MEDIUM",
                 executed_mode="NONE",
-                providers_used=["jev"],
+                providers_used=["laya"],
                 status="error",
                 error_message=str(e)
             )
 
-        # Costruiamo il prompt per Nemotron basato sul piano
         prompt = (
             f"The user asked: {request.message}\n\n"
-            f"The reasoning system (JEV) produced the following plan:\n"
-            f"- Intent: {plan.intent}\n"
-            f"- Strategy: {plan.strategy}\n"
-            f"Generate a natural and useful response for the user following this strategy."
+            f"The local reasoning system (Laya) produced the following decision context:\n"
+            f"- Decision kind: {decision.kind}\n"
+            f"- Reasoning: {decision.reason}\n"
+            f"Generate a natural and useful response for the user following this reasoning strategy."
         )
 
         gen_req = GenerationRequest(prompt=prompt, context={"mode": "MEDIUM"})
@@ -167,53 +163,59 @@ class HybridOrchestrator:
                 text=gen_res.text,
                 requested_mode="MEDIUM",
                 executed_mode="MEDIUM",
-                providers_used=["jev", "nemotron"],
+                providers_used=["laya", "nemotron"],
                 status="success",
-                metadata={"jev_plan": plan.model_dump()}
+                metadata={"laya_decision": decision.model_dump()}
             )
         except Exception as e:
             return ChatResponse(
                 text="Error during final response generation.",
                 requested_mode="MEDIUM",
                 executed_mode="MEDIUM",
-                providers_used=["jev", "nemotron"],
+                providers_used=["laya", "nemotron"],
                 status="error",
                 error_message=str(e)
             )
 
     async def _process_hard(self, request: ChatRequest) -> ChatResponse:
-        """HARD: Utente -> JEV (Piano Approfondito) -> Nemotron -> Risposta"""
-        try:
-            plan = await self._jev.analyze_and_plan(request.message, context={"depth": "hard"})
-        except JEVUnavailable as e:
+        """HARD: Utente -> Laya (Approfondito) -> Nemotron -> Risposta"""
+        if not self._laya.runtime_configured:
             return ChatResponse(
-                text="HARD mode unavailable: JEV engine connection missing.",
+                text="HARD mode unavailable: Laya engine connection missing.",
                 requested_mode="HARD",
                 executed_mode="NONE",
                 providers_used=[],
                 status="error",
-                error_message=str(e)
+                error_message="Laya (System 1) not configured."
             )
+
+        try:
+            decision_env = await self._laya.decide(DecisionRequest(user_input=request.message, context={"mode": "HARD", "depth": "deep"}))
+            decision = decision_env.decision
         except Exception as e:
             return ChatResponse(
-                text="Error during deep JEV analysis.",
+                text="Error during deep Laya analysis.",
                 requested_mode="HARD",
                 executed_mode="NONE",
-                providers_used=["jev"],
+                providers_used=["laya"],
                 status="error",
                 error_message=str(e)
             )
 
-        steps_text = "\n".join(f"{i+1}. {s.description}" for i, s in enumerate(plan.steps))
-        criteria_text = "\n".join(f"- {c}" for c in plan.validation_criteria)
-
         prompt = (
             f"The user asked: {request.message}\n\n"
-            f"The reasoning system (JEV) elaborated a detailed plan:\n"
-            f"Steps:\n{steps_text}\n\n"
-            f"Validation criteria:\n{criteria_text}\n\n"
-            f"Redigi la risposta finale per l'utente attenendoti strettamente a questi passaggi e criteri. "
-            f"Non inventare informazioni aggiuntive. Limitati a trasformare questo piano in una risposta fluida."
+            f"The local reasoning system (Laya) elaborated a detailed decision:\n"
+            f"- Decision kind: {decision.kind}\n"
+            f"- Reasoning: {decision.reason}\n"
+        )
+        if decision.missing_information:
+            prompt += f"- Missing info: {', '.join(decision.missing_information)}\n"
+        if decision.parameters:
+            prompt += f"- Parameters: {decision.parameters}\n"
+            
+        prompt += (
+            f"\nDraft the final response for the user strictly adhering to Laya's reasoning. "
+            f"Do not invent additional information. Just transform this reasoning into a fluid response."
         )
 
         gen_req = GenerationRequest(prompt=prompt, context={"mode": "HARD"})
@@ -223,16 +225,16 @@ class HybridOrchestrator:
                 text=gen_res.text,
                 requested_mode="HARD",
                 executed_mode="HARD",
-                providers_used=["jev", "nemotron"],
+                providers_used=["laya", "nemotron"],
                 status="success",
-                metadata={"jev_plan": plan.model_dump()}
+                metadata={"laya_decision": decision.model_dump()}
             )
         except Exception as e:
             return ChatResponse(
                 text="Error during final response generation.",
                 requested_mode="HARD",
                 executed_mode="HARD",
-                providers_used=["jev", "nemotron"],
+                providers_used=["laya", "nemotron"],
                 status="error",
                 error_message=str(e)
             )
