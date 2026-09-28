@@ -26,6 +26,13 @@ function Kill-Tree ($processId) {
 }
 
 if ($StopChildren) {
+    try {
+        # Find and kill processes holding the ports
+        $conn = Get-NetTCPConnection -LocalPort $BackendPort, $LayaPort -State Listen -ErrorAction SilentlyContinue
+        if ($conn) {
+            $conn | ForEach-Object { Kill-Tree $_.OwningProcess }
+        }
+    } catch {}
     if (Test-Path $PidFile) {
         try {
             $pids = Get-Content $PidFile -Raw | ConvertFrom-Json
