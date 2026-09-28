@@ -1129,10 +1129,6 @@
         }, { signal: state.listeners.signal });
       });
 
-      if (sessions.length > 0) {
-          loadSession(sessions[0].session_id);
-      }
-
     const appendMessage = (role, text, meta) => {
       const div = document.createElement('div');
       div.className = `chat-message ${role}`;
@@ -1143,13 +1139,13 @@
       div.style.maxWidth = '85%';
       div.style.border = '1px solid ' + (role === 'user' ? 'var(--accent-soft)' : 'var(--line)');
       
-      let html = `<strong style="color: ${role==='user'?'var(--accent)':'var(--ink)'};">${role === 'user' ? 'Tu' : 'AI'}</strong><div style="margin-top: 6px; line-height: 1.5; overflow-wrap: anywhere;">${esc(text).replace(/\n/g, '<br>')}</div>`;
+      let html = `<strong style="color: ${role==='user'?'var(--accent)':'var(--ink)'};">${role === 'user' ? 'You' : 'AI'}</strong><div style="margin-top: 6px; line-height: 1.5; overflow-wrap: anywhere;">${esc(text).replace(/\n/g, '<br>')}</div>`;
       if (meta && Object.keys(meta).length > 0) {
         html += `<div style="margin-top: 10px; font-size: 0.85em; color: var(--muted); border-top: 1px solid var(--line); padding-top: 6px; display: flex; gap: 12px; flex-wrap: wrap;">`;
         if (meta.executed_mode) html += `<span>Mode: <strong>${meta.executed_mode}</strong></span>`;
         if (meta.providers_used && meta.providers_used.length) html += `<span>Provider: ${meta.providers_used.join(' + ')}</span>`;
-        if (meta.extracted_memories) html += `<span style="color: var(--green);">🧠 Estratti ${meta.extracted_memories} ricordi</span>`;
-        if (meta.retrieved_memories) html += `<span style="color: var(--amber);">💡 Usati ${meta.retrieved_memories} ricordi a lungo termine</span>`;
+        if (meta.extracted_memories) html += `<span style="color: var(--green);">🧠 Extracted ${meta.extracted_memories} memories</span>`;
+        if (meta.retrieved_memories) html += `<span style="color: var(--amber);">💡 Used ${meta.retrieved_memories} long-term memories</span>`;
         if (meta.error_message) html += `<span style="color: var(--red);">⚠️ Error: ${esc(meta.error_message)}</span>`;
         html += `</div>`;
       }
@@ -1184,6 +1180,10 @@
     document.querySelectorAll('.session-item').forEach(el => {
        el.addEventListener('click', () => loadSession(el.dataset.id));
     });
+
+      if (sessions.length > 0) {
+          loadSession(sessions[0].session_id);
+      }
 
           document.getElementById('new-chat-btn').addEventListener('click', async () => {
          try {
