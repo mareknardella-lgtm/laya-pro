@@ -301,12 +301,12 @@ function apiFetch(requests, approvalRecords = [], workflowStatus = 'awaiting_app
 }
 
 test('dashboard opens with welcome consent screen containing explicit summary and Italian title', async () => {
-  assert.match(htmlSource, /Benvenuto in Laya Pro/);
-  assert.match(htmlSource, /Accetta e connetti/);
-  assert.match(htmlSource, /Esci/);
-  assert.match(htmlSource, /Connessione al backend locale/);
-  assert.match(htmlSource, /Comunicazione con System 1/);
-  assert.match(htmlSource, /Accesso alle funzionalit.* del dashboard/);
+  assert.match(htmlSource, /Welcome to Laya Pro/);
+  assert.match(htmlSource, /Accept and connect/);
+  assert.match(htmlSource, /Exit/);
+  assert.match(htmlSource, /Local backend connection/);
+  assert.match(htmlSource, /System 1 communication/);
+  assert.match(htmlSource, /Dashboard features access/);
   assert.match(htmlSource, /Utilizzo delle autorizzazioni previste dal sistema/);
   assert.doesNotMatch(htmlSource, /id="operator-token"/);
   assert.doesNotMatch(htmlSource, /Verify and connect/);
@@ -381,7 +381,7 @@ test('handles offline backend with clear diagnostic message and allows retry', a
   await app.getElement('consent-connect').click();
 
   await waitFor(() => app.getElement('welcome-status-box').hidden === false);
-  assert.match(app.getElement('welcome-error-detail').textContent, /Backend non raggiungibile/);
+  assert.match(app.getElement('welcome-error-detail').textContent, /Backend unreachable/);
   assert.equal(app.getElement('consent-connect').disabled, false);
   assert.equal(app.getElement('app-shell').hidden, true);
 });
@@ -573,7 +573,7 @@ test('service health indicator handles both services offline / error', async () 
 
   await waitFor(() => app.getElement('overall-label').textContent.includes('Servizi offline'));
   assert.equal(app.getElement('overall-label').textContent, 'Servizi offline');
-  assert.equal(app.getElement('backend-status-text').textContent, 'Errore');
+  assert.equal(app.getElement('backend-status-text').textContent, 'Error');
   assert.equal(app.getElement('system1-status-text').textContent, 'Offline');
 });
 
@@ -732,7 +732,7 @@ async function connectSafetyDashboard(requests = [], control = {}) {
   await app.getElement('consent-connect').click();
   await waitFor(() => app.getElement('app-shell').hidden === false);
   await waitFor(() => requests.some((request) => request.path === '/api/v1/operator/workflows?limit=10'));
-  await waitFor(() => app.getElement('overall-label').textContent !== 'Verifica in corso...');
+  await waitFor(() => app.getElement('overall-label').textContent !== 'Checking...');
   return { app, requests, fetchHandler };
 }
 
@@ -775,7 +775,7 @@ test('a System 1 drop during a critical workflow raises the priority alert and s
   assert.equal(app.getElement('alert-execution-id').textContent, 'execution-critical');
   assert.match(app.getElement('alert-workflow-phase').textContent, /replace/);
   assert.match(app.getElement('alert-reason').textContent, /System 1 offline/);
-  assert.match(app.getElement('alert-stop-status').textContent, /Arresto confermato/);
+  assert.match(app.getElement('alert-stop-status').textContent, /Stop confirmed/);
   assert.equal(app.getElement('alert-resume-workflow').hidden, true, 'resume stays blocked while System 1 is down');
 
   assert.equal(pauseCalls(requests), 1, 'the workflow is stopped through the existing backend transition');
@@ -825,9 +825,9 @@ test('a System 1 timeout is treated as a failure and an unconfirmed stop is repo
   await runHealthCheck(app);
   await waitFor(() => app.getElement('priority-alert-banner').hidden === false);
 
-  assert.equal(app.getElement('system1-status-text').textContent, 'Errore');
+  assert.equal(app.getElement('system1-status-text').textContent, 'Error');
   assert.equal(app.getElement('overall-label').textContent, 'Connessione parziale');
-  assert.match(app.getElement('alert-stop-status').textContent, /Interruzione non confermata/);
+  assert.match(app.getElement('alert-stop-status').textContent, /Unconfirmed interruption/);
   assert.equal(app.getElement('alert-resume-workflow').hidden, true);
   const [event] = safetyEvents(requests, 'system1_failure_interruption');
   assert.equal(event.status, 'stop_unconfirmed');
@@ -846,7 +846,7 @@ test('an unreachable backend is reported as unconfirmed and never claims a safe 
   assert.equal(app.getElement('backend-status-text').textContent, 'Offline');
   assert.equal(app.getElement('system1-status-text').textContent, 'Offline');
   assert.equal(app.getElement('overall-label').textContent, 'Servizi offline');
-  assert.match(app.getElement('alert-stop-status').textContent, /Interruzione non confermata/);
+  assert.match(app.getElement('alert-stop-status').textContent, /Unconfirmed interruption/);
   assert.equal(app.getElement('alert-resume-workflow').hidden, true, 'an unverified stop never exposes resume');
   // Nothing can be persisted while the backend itself is unreachable: the alert stays the
   // only evidence, and it must not claim a confirmed stop.

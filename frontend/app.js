@@ -72,9 +72,9 @@
 
   const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
   const shortId = (value, n = 8) => { const text = String(value || '—'); return text.length > n * 2 + 3 ? `${text.slice(0, n)}…${text.slice(-n)}` : text; };
-  const fmtTime = (value, seconds = false) => { if (!value) return 'Non registrato'; const date = new Date(value); return Number.isFinite(date.getTime()) ? new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: seconds ? 'medium' : 'short' }).format(date) : 'Sconosciuto'; };
+  const fmtTime = (value, seconds = false) => { if (!value) return 'Non registrato'; const date = new Date(value); return Number.isFinite(date.getTime()) ? new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: seconds ? 'medium' : 'short' }).format(date) : 'Unknown'; };
   const fmtTimeOnly = (value) => { if (!value) return '--:--:--'; const date = new Date(value); return Number.isFinite(date.getTime()) ? new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(date) : '--:--:--'; };
-  const fmtRelative = (value) => { if (!value) return 'Nessun controllo riuscito'; const delta = Date.now() - new Date(value).getTime(); if (!Number.isFinite(delta)) return 'Sconosciuto'; if (delta < 60_000) return 'Proprio ora'; if (delta < 3_600_000) return `${Math.floor(delta / 60_000)}m fa`; return fmtTime(value); };
+  const fmtRelative = (value) => { if (!value) return 'No successful check'; const delta = Date.now() - new Date(value).getTime(); if (!Number.isFinite(delta)) return 'Unknown'; if (delta < 60_000) return 'Just now'; if (delta < 3_600_000) return `${Math.floor(delta / 60_000)}m ago`; return fmtTime(value); };
   const fmtDuration = (ms) => ms == null ? 'In corso' : ms < 1000 ? `${Math.max(0, Math.round(ms))} ms` : ms < 60_000 ? `${(ms / 1000).toFixed(2)} s` : `${Math.floor(ms / 60_000)}m ${Math.floor((ms % 60_000) / 1000)}s`;
   const badge = (status, label = status) => `<span class="badge badge-${esc(String(status || 'unknown').toLowerCase())}">${esc((label || 'Unknown').replaceAll('_', ' '))}</span>`;
   const busy = (key) => state.busy.has(key);
@@ -187,10 +187,10 @@
     }
   }
 
-  function formatErrorMessage(error, defaultMsg = 'Si è verificato un errore imprevisto.') {
+  function formatErrorMessage(error, defaultMsg = 'An unexpected error occurred.') {
     if (error instanceof ApiError) {
       if (error.status === 0 || error.code === 'network_error') {
-        return 'Backend non raggiungibile. Verifica che il server locale sia avviato su 127.0.0.1:8765.';
+        return 'Backend unreachable. Verifica che il server locale sia avviato su 127.0.0.1:8765.';
       }
       if (error.code === 'timeout') {
         return 'Richiesta scaduta per timeout. Il server locale non risponde.';
@@ -205,7 +205,7 @@
         return `Risorsa non trovata (HTTP 404): ${error.message}`;
       }
       if (error.status === 500) {
-        return `Errore interno del server (HTTP 500): ${error.message}`;
+        return `Internal server error (HTTP 500): ${error.message}`;
       }
       if (error.status === 503) {
         return `Servizio non disponibile (HTTP 503): ${error.message}`;
@@ -247,9 +247,9 @@
           const code = typeof detail === 'object' ? detail.code : 'http_error';
           let message = typeof detail === 'object' ? detail.message : typeof detail === 'string' ? detail : `Backend returned HTTP ${response.status}`;
           if (response.status === 404 && code === 'http_error') {
-            message = `L'endpoint richiesto non esiste (${path}).`;
+            message = `The requested endpoint does not exist (${path}).`;
           } else if (response.status === 500 && code === 'http_error') {
-            message = 'Il backend ha riscontrato un errore interno non gestito.';
+            message = 'The backend encountered an unhandled internal error.';
           }
           throw new ApiError(response.status, code, message, data);
         }
@@ -257,7 +257,7 @@
       } catch (error) {
         if (error instanceof ApiError) {
           if (error.status === 401 && state.consented) {
-            disconnectOperatorSession('Sessione scaduta o non valida');
+            disconnectOperatorSession('Session expired or invalid');
           }
           throw error;
         }
@@ -319,12 +319,12 @@
       if (overall === 'all_operational') elements.overallLabel.textContent = 'Tutti i servizi operativi';
       else if (overall === 'partial') elements.overallLabel.textContent = 'Connessione parziale';
       else if (overall === 'offline') elements.overallLabel.textContent = 'Servizi offline';
-      else elements.overallLabel.textContent = 'Verifica in corso...';
+      else elements.overallLabel.textContent = 'Checking...';
     }
 
     if (elements.backendDot) elements.backendDot.className = dotClass(backend.status);
     if (elements.backendStatusText) {
-      elements.backendStatusText.textContent = backend.status === 'online' ? 'Online' : backend.status === 'offline' ? 'Offline' : 'Errore';
+      elements.backendStatusText.textContent = backend.status === 'online' ? 'Online' : backend.status === 'offline' ? 'Offline' : 'Error';
     }
     if (elements.backendLatencyText) {
       elements.backendLatencyText.textContent = backend.latency_ms != null ? `(${backend.latency_ms} ms)` : '';
@@ -337,7 +337,7 @@
 
     if (elements.system1Dot) elements.system1Dot.className = dotClass(system1.status);
     if (elements.system1StatusText) {
-      elements.system1StatusText.textContent = system1.status === 'online' ? 'Online' : system1.status === 'offline' ? 'Offline' : 'Errore';
+      elements.system1StatusText.textContent = system1.status === 'online' ? 'Online' : system1.status === 'offline' ? 'Offline' : 'Error';
     }
     if (elements.system1LatencyText) {
       elements.system1LatencyText.textContent = system1.latency_ms != null ? `(${system1.latency_ms} ms)` : '';
@@ -388,7 +388,7 @@
     } catch {}
 
     if (state.consecutiveSystem1Failures < failureThreshold) {
-      return; // Errore temporaneo, attende conferma
+      return; // Temporary error, awaiting confirmation
     }
 
     // Se c'è un workflow critico attivo in esecuzione o in attesa di approvazione
@@ -396,7 +396,7 @@
     if (!wf) return;
 
     let stopConfirmed = false;
-    let stopStatusText = 'Interruzione non confermata';
+    let stopStatusText = 'Unconfirmed interruption';
 
     try {
       // 1. Arresto sicuro immediato tramite pausa nel backend
@@ -404,10 +404,10 @@
       const pauseResult = await api.post(`/operator/workflows/${encodeURIComponent(wf.workflow_id)}/pause${query}`);
       if (pauseResult && (pauseResult.status === 'paused' || pauseResult.status === 'awaiting_approval')) {
         stopConfirmed = true;
-        stopStatusText = 'Arresto confermato (messo in pausa di sicurezza)';
+        stopStatusText = 'Stop confirmed (placed in safety pause)';
       }
     } catch (err) {
-      stopStatusText = 'Interruzione non confermata — errore blocco: ' + formatErrorMessage(err);
+      stopStatusText = 'Unconfirmed interruption — errore blocco: ' + formatErrorMessage(err);
     }
 
     // 2. Registrazione evento di audit per la sicurezza
@@ -432,7 +432,7 @@
     showPriorityAlert({
       workflow: wf,
       executionId: wf.steps?.find((s) => s.execution_id)?.execution_id,
-      reason: 'System 1 offline durante un workflow critico. Nuove operazioni bloccate.',
+      reason: 'System 1 offline during a critical workflow. New operations blocked.',
       stopStatus: stopStatusText,
     });
   }
@@ -479,7 +479,7 @@
       state.servicesHealth = {
         backend: {
           status: 'offline',
-          message: isTimeout ? 'Timeout richiesta backend' : 'Backend non raggiungibile (connessione rifiutata)',
+          message: isTimeout ? 'Timeout richiesta backend' : 'Backend unreachable (connessione rifiutata)',
           latency_ms: null,
           checked_at: nowIso,
         },
@@ -627,7 +627,7 @@
       try {
         await api.get('/health');
       } catch (healthErr) {
-        throw new ApiError(0, 'backend_unreachable', 'Backend non raggiungibile. Assicurati che Laya Pro sia in esecuzione (scripts/run_backend.ps1).');
+        throw new ApiError(0, 'backend_unreachable', 'Backend unreachable. Assicurati che Laya Pro sia in esecuzione (scripts/run_backend.ps1).');
       }
 
       // 2. Verifica stato di System 1
@@ -678,7 +678,7 @@
         state.lastData.status = verifiedStatus;
       } catch (projErr) {
         state.token = '';
-        throw new ApiError(projErr.status || 0, 'projects_load_failed', `Errore durante il caricamento dei progetti: ${projErr.message}`);
+        throw new ApiError(projErr.status || 0, 'projects_load_failed', `Error loading projects: ${projErr.message}`);
       }
 
       setWelcomeConnecting(false);
@@ -749,7 +749,7 @@
       if (elements.view) {
         elements.view.innerHTML = heading('LOCAL CONTROL PLANE', titles[state.page] || 'Overview', 'Showing data returned by the local backend only.') + errorPanel(error);
       }
-      if (error instanceof ApiError && error.status === 0) setConnection(false, 'Backend non raggiungibile');
+      if (error instanceof ApiError && error.status === 0) setConnection(false, 'Backend unreachable');
     } finally {
       if (elements.view) elements.view.setAttribute('aria-busy', 'false');
       bindPage();
@@ -775,7 +775,7 @@
   async function renderOverview() {
     if (!state.token) {
       try { await api.get('/health'); setConnection(true, 'Backend raggiungibile · consenso necessario'); }
-      catch { setConnection(false, 'Backend non raggiungibile · sessione non connessa'); }
+      catch { setConnection(false, 'Backend unreachable · sessione non connessa'); }
       elements.view.innerHTML = heading('LOCAL CONTROL PLANE', 'Operator overview', 'Monitor backend-recorded approvals, workflows, invocations and configured adapters.', '<button class="button button-primary" data-action="connect">Accetta e connetti</button>') + noSession('visualizzare la panoramica');
       return;
     }
@@ -912,7 +912,7 @@
     let alertRepeat = 4; try { const r = localStorage.getItem('laya-alert-repeat-sec'); if (r) alertRepeat = Number(r); } catch {}
 
     elements.view.innerHTML = heading('PREFERENCES', 'Settings', 'Dashboard preferences are stored locally. Backend configuration remains read-only here.', '<button class="button button-quiet button-small" data-action="disconnect">Disconnetti sessione</button>')
-      + '<div class="notice" style="margin-bottom:14px"><span class="notice-icon">▣</span><span>La sessione operatore è autorizzata su loopback e conservata esclusivamente nella memoria di questo tab. Backend model URLs, token di approvazione, cartelle progetto e permessi rimangono non modificabili da qui.</span></div>'
+      + '<div class="notice" style="margin-bottom:14px"><span class="notice-icon">▣</span><span>The operator session is authorized on loopback and kept exclusively in the memory of this tab. Backend model URLs, approval tokens, project folders and permissions remain unmodifiable from here.</span></div>'
       + `<div class="settings-section-title">Monitoraggio e allerte dei workflow critici</div><div class="settings-grid">`
       + `<article class="settings-card"><h3>Polling stato servizi (ordinario e critico)</h3><p>Frequenze di verifica dello stato di Backend e System 1.</p>`
       + `<label class="field-label" for="health-interval">Intervallo di polling ordinario</label><select id="health-interval" class="select-input"><option value="0" ${healthInterval === 0 ? 'selected' : ''}>Sospendi polling</option><option value="5" ${healthInterval === 5 ? 'selected' : ''}>5 secondi</option><option value="10" ${healthInterval === 10 ? 'selected' : ''}>10 secondi</option><option value="15" ${healthInterval === 15 ? 'selected' : ''}>15 secondi (predefinito)</option><option value="30" ${healthInterval === 30 ? 'selected' : ''}>30 secondi</option><option value="60" ${healthInterval === 60 ? 'selected' : ''}>60 secondi</option></select>`
@@ -926,7 +926,7 @@
       + `<label class="field-label" for="alert-repeat-sec" style="margin-top:10px">Frequenza ripetizione suono</label><select id="alert-repeat-sec" class="select-input"><option value="2" ${alertRepeat === 2 ? 'selected' : ''}>Ogni 2 secondi</option><option value="4" ${alertRepeat === 4 ? 'selected' : ''}>Ogni 4 secondi (predefinito)</option><option value="6" ${alertRepeat === 6 ? 'selected' : ''}>Ogni 6 secondi</option></select>`
       + `<div class="health-controls-row"><button class="button button-quiet button-small" data-action="test-alert-sound">Testa segnale acustico</button></div></article></div>`
       + `<div class="settings-section-title">Dashboard preferences</div><div class="settings-grid"><article class="settings-card"><h3>Auto-refresh dati</h3><p>Aggiornamento periodico dei dati tabellari mentre la scheda è visibile.</p><label class="field-label" for="refresh-interval">Intervallo dati</label><select id="refresh-interval" class="select-input"><option value="0" ${refreshValue === 0 ? 'selected' : ''}>Manuale</option><option value="15" ${refreshValue === 15 ? 'selected' : ''}>15 sec</option><option value="30" ${refreshValue === 30 ? 'selected' : ''}>30 sec</option><option value="60" ${refreshValue === 60 ? 'selected' : ''}>60 sec</option></select></article><article class="settings-card"><h3>Display</h3><p>Responsive layout and reduced-motion preference.</p><div class="setting-value">Light theme · prefers-reduced-motion supported</div></article></div>`
-      + `<div class="settings-section-title">Backend configuration · read only</div><div class="settings-grid"><article class="settings-card"><h3>API origin</h3><p>Same-origin loopback backend integration.</p><div class="setting-value">${esc(location.origin)}${API_ROOT}</div></article><article class="settings-card"><h3>Operator session</h3><p>Sessione locale con consenso utente. Nessuna credenziale è salvata nel browser.</p><div class="setting-value">${state.token ? 'Connected · in-memory session active' : 'Disconnected'}</div></article><article class="settings-card"><h3>System 1</h3><p>Runtime configured flag, not proof of native service availability.</p><div class="setting-value">${settings ? (settings.system1_configured ? 'Configured · unverified' : 'Unavailable') : 'Connect to query backend'}</div></article><article class="settings-card"><h3>System 2</h3><p>Explicit text generation, not an authorization component.</p><div class="setting-value">${settings ? (settings.system2_configured ? 'Configured · unverified' : 'Unavailable') : 'Connect to query backend'}</div></article><article class="settings-card"><h3>Tool availability</h3><p>Per-action policy and approval checks still apply.</p><div class="setting-value">${settings ? (settings.tool_execution_available ? 'Some registered capabilities present' : 'Unavailable') : 'Connect to query backend'}</div></article><article class="settings-card"><h3>Unsupported</h3><p>Model secrets, project configuration, permission grants, database options and approval policy.</p><div class="setting-value">Unavailable · deployment-owned</div></article></div>`;
+      + `<div class="settings-section-title">Backend configuration · read only</div><div class="settings-grid"><article class="settings-card"><h3>API origin</h3><p>Same-origin loopback backend integration.</p><div class="setting-value">${esc(location.origin)}${API_ROOT}</div></article><article class="settings-card"><h3>Operator session</h3><p>Local session with user consent. No credentials are saved in the browser.</p><div class="setting-value">${state.token ? 'Connected · in-memory session active' : 'Disconnected'}</div></article><article class="settings-card"><h3>System 1</h3><p>Runtime configured flag, not proof of native service availability.</p><div class="setting-value">${settings ? (settings.system1_configured ? 'Configured · unverified' : 'Unavailable') : 'Connect to query backend'}</div></article><article class="settings-card"><h3>System 2</h3><p>Explicit text generation, not an authorization component.</p><div class="setting-value">${settings ? (settings.system2_configured ? 'Configured · unverified' : 'Unavailable') : 'Connect to query backend'}</div></article><article class="settings-card"><h3>Tool availability</h3><p>Per-action policy and approval checks still apply.</p><div class="setting-value">${settings ? (settings.tool_execution_available ? 'Some registered capabilities present' : 'Unavailable') : 'Connect to query backend'}</div></article><article class="settings-card"><h3>Unsupported</h3><p>Model secrets, project configuration, permission grants, database options and approval policy.</p><div class="setting-value">Unavailable · deployment-owned</div></article></div>`;
   }
 
   let confirmResolve = null;
@@ -968,21 +968,21 @@
   
   async function renderMemory() {
     if (!state.token) {
-      elements.view.innerHTML = heading('MEMORIA GLOBALE', 'Gestione Memoria Personale', 'Autenticazione necessaria') + noSession('gestire i ricordi persistenti');
+      elements.view.innerHTML = heading('GLOBAL MEMORY', 'Personal Memory Management', 'Authentication required') + noSession('manage persistent memories');
       return;
     }
 
-    elements.view.innerHTML = heading('MEMORIA GLOBALE', 'Gestione Memoria', 'Visualizza, modifica o elimina le informazioni apprese dalla Chat AI.') + `
+    elements.view.innerHTML = heading('GLOBAL MEMORY', 'Memory Management', 'View, modify or delete information learned by AI Chat.') + `
       <div class="panel" style="padding: 24px;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
-          <h3 style="margin: 0; font: 700 16px var(--display); color: var(--ink);">Ricordi Personali e Preferenze</h3>
+          <h3 style="margin: 0; font: 700 16px var(--display); color: var(--ink);">Personal Memories and Preferences</h3>
           <div class="filter-row">
-             <button id="add-memory-btn" class="button button-primary">Aggiungi Ricordo</button>
-             <button id="clear-memory-btn" class="button button-danger" style="background: rgba(248, 113, 113, 0.15); color: var(--red); border: 1px solid var(--red-soft);">Svuota Memoria</button>
+             <button id="add-memory-btn" class="button button-primary">Add Memory</button>
+             <button id="clear-memory-btn" class="button button-danger" style="background: rgba(248, 113, 113, 0.15); color: var(--red); border: 1px solid var(--red-soft);">Clear Memory</button>
           </div>
         </div>
         <div id="memory-list" style="display: grid; gap: 12px;">
-           <div class="empty-state"><em>Caricamento memoria in corso...</em></div>
+           <div class="empty-state"><em>Loading memory...</em></div>
         </div>
       </div>
     `;
@@ -994,7 +994,7 @@
         if (!list || list.length === 0) {
           container.innerHTML = `<div class="empty-state">
             <span class="empty-icon" aria-hidden="true">🧠</span>
-            <div><strong>Nessun ricordo salvato</strong><p>La Chat AI non ha ancora estratto o memorizzato alcuna informazione persistente.</p></div>
+            <div><strong>No saved memory</strong><p>The AI Chat has not extracted or stored any persistent information yet.</p></div>
           </div>`;
           return;
         }
@@ -1006,7 +1006,7 @@
               <dd style="font-size: 11px; margin-top: 8px;">${esc(typeof m.value === 'string' ? m.value : JSON.stringify(m.value))}</dd>
             </div>
             <div style="display: flex; gap: 8px;">
-               <button class="button button-quiet button-small delete-mem-btn" data-key="${esc(m.key)}">Elimina</button>
+               <button class="button button-quiet button-small delete-mem-btn" data-key="${esc(m.key)}">Delete</button>
             </div>
           </div>
         `).join('');
@@ -1014,14 +1014,14 @@
         container.querySelectorAll('.delete-mem-btn').forEach(btn => {
           btn.addEventListener('click', async (e) => {
              const key = e.target.dataset.key;
-             if (confirm(`Eliminare definitivamente il ricordo "${key}"?`)) {
+             if (confirm(`Deletere definitivamente il ricordo "${key}"?`)) {
                 await api.del(`/memory/global/${encodeURIComponent(key)}`);
                 await loadMemories();
              }
           });
         });
       } catch (err) {
-        document.getElementById('memory-list').innerHTML = `<div class="error-state">Errore nel caricamento della memoria: ${esc(err.message)}</div>`;
+        document.getElementById('memory-list').innerHTML = `<div class="error-state">Memory loading error: ${esc(err.message)}</div>`;
       }
     };
     
@@ -1036,7 +1036,7 @@
            }
            await loadMemories();
          } catch(e) {
-           alert("Errore durante lo svuotamento: " + e.message);
+           alert("Error during clearing: " + e.message);
          }
       }
     });
@@ -1051,14 +1051,14 @@
         await api.post('/memory/global', { key: key, value: val, scope: 'persistent' });
         await loadMemories();
       } catch (e) {
-        alert("Errore nel salvataggio: " + e.message);
+        alert("Saving error: " + e.message);
       }
     });
   }
 
   async function renderChat() {
     if (!state.token) {
-      elements.view.innerHTML = heading('HYBRID AI FRAMEWORK', 'JEV + Nemotron Chat', 'Autenticazione necessaria') + noSession('utilizzare la chat AI');
+      elements.view.innerHTML = heading('HYBRID AI FRAMEWORK', 'JEV + Nemotron Chat', 'Authentication required') + noSession('use AI chat');
       return;
     }
     
@@ -1072,12 +1072,12 @@
     
     let activeSessionId = null;
     
-    elements.view.innerHTML = heading('HYBRID AI FRAMEWORK', 'JEV + Nemotron Chat', 'Conversa con il sistema ibrido selezionando la modalità di esecuzione.') + `
+    elements.view.innerHTML = heading('HYBRID AI FRAMEWORK', 'JEV + Nemotron Chat', 'Converse with the hybrid system by selecting the execution mode.') + `
       <div class="panel" style="display: grid; grid-template-columns: 280px minmax(0, 1fr); border: none; overflow: hidden; height: 75vh;">
         
         <div class="chat-sidebar" style="border-right: 1px solid var(--line); background: rgba(0,0,0,0.2); display: flex; flex-direction: column;">
            <div style="padding: 16px; border-bottom: 1px solid var(--line);">
-              <button id="new-chat-btn" class="button button-primary" style="width: 100%;">+ Nuova Chat</button>
+              <button id="new-chat-btn" class="button button-primary" style="width: 100%;">+ New Chat</button>
            </div>
            <div id="session-list" style="flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 8px;">
               ${sessions.map(s => `
@@ -1091,25 +1091,25 @@
 
         <div class="chat-container" style="display: flex; flex-direction: column; background: var(--paper-alt);">
           <div class="chat-header" style="padding: 16px; border-bottom: 1px solid var(--line); display: flex; gap: 16px; align-items: center; background: var(--canvas);">
-            <label class="field-label" style="margin: 0;">Modalità:</label>
+            <label class="field-label" style="margin: 0;">Mode:</label>
             <div class="filter-row" id="chat-mode-group">
-              <button class="filter-chip active" data-mode="LOW" title="LOW (Solo Nemotron)">LOW</button>
+              <button class="filter-chip active" data-mode="LOW" title="LOW (Nemotron Only)">LOW</button>
               <button class="filter-chip" data-mode="MEDIUM" title="MEDIUM (JEV + Nemotron)">MEDIUM</button>
-              <button class="filter-chip" data-mode="HARD" title="HARD (Ragionamento JEV profondo)">HARD</button>
+              <button class="filter-chip" data-mode="HARD" title="HARD (Deep JEV reasoning)">HARD</button>
             </div>
             
             <label style="margin-left: auto; display: flex; align-items: center; gap: 8px; cursor: pointer; color: var(--muted); font-size: 10px;">
-               <input type="checkbox" id="auto-memory-toggle" checked style="accent-color: var(--accent);"> Memoria Auto
+               <input type="checkbox" id="auto-memory-toggle" checked style="accent-color: var(--accent);"> Auto Memory
             </label>
           </div>
           <div id="chat-messages" class="chat-messages" style="flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 16px;">
             <div class="empty-state" style="margin: auto; border: none; background: transparent;">
-               Seleziona o avvia una nuova conversazione per iniziare.
+               Select or start a new conversation to begin.
             </div>
           </div>
           <div class="chat-input-area" style="padding: 16px; border-top: 1px solid var(--line); display: flex; gap: 8px; background: var(--canvas);">
-            <textarea id="chat-input" class="text-input" placeholder="Scrivi un messaggio... (Shift+Enter per andare a capo)" style="flex: 1; min-height: 44px; resize: vertical;" disabled></textarea>
-            <button id="chat-send" class="button button-primary" disabled>Invia</button>
+            <textarea id="chat-input" class="text-input" placeholder="Type a message... (Shift+Enter for new line)" style="flex: 1; min-height: 44px; resize: vertical;" disabled></textarea>
+            <button id="chat-send" class="button button-primary" disabled>Send</button>
           </div>
         </div>
       </div>
@@ -1146,11 +1146,11 @@
       let html = `<strong style="color: ${role==='user'?'var(--accent)':'var(--ink)'};">${role === 'user' ? 'Tu' : 'AI'}</strong><div style="margin-top: 6px; line-height: 1.5; overflow-wrap: anywhere;">${esc(text).replace(/\n/g, '<br>')}</div>`;
       if (meta && Object.keys(meta).length > 0) {
         html += `<div style="margin-top: 10px; font-size: 0.85em; color: var(--muted); border-top: 1px solid var(--line); padding-top: 6px; display: flex; gap: 12px; flex-wrap: wrap;">`;
-        if (meta.executed_mode) html += `<span>Modalità: <strong>${meta.executed_mode}</strong></span>`;
+        if (meta.executed_mode) html += `<span>Mode: <strong>${meta.executed_mode}</strong></span>`;
         if (meta.providers_used && meta.providers_used.length) html += `<span>Provider: ${meta.providers_used.join(' + ')}</span>`;
         if (meta.extracted_memories) html += `<span style="color: var(--green);">🧠 Estratti ${meta.extracted_memories} ricordi</span>`;
         if (meta.retrieved_memories) html += `<span style="color: var(--amber);">💡 Usati ${meta.retrieved_memories} ricordi a lungo termine</span>`;
-        if (meta.error_message) html += `<span style="color: var(--red);">⚠️ Errore: ${esc(meta.error_message)}</span>`;
+        if (meta.error_message) html += `<span style="color: var(--red);">⚠️ Error: ${esc(meta.error_message)}</span>`;
         html += `</div>`;
       }
       div.innerHTML = html;
@@ -1167,17 +1167,17 @@
           el.style.borderColor = el.dataset.id === id ? 'var(--accent)' : 'transparent';
        });
        
-       messages.innerHTML = '<div class="empty-state" style="margin: auto; border: none; background: transparent;">Caricamento messaggi...</div>';
+       messages.innerHTML = '<div class="empty-state" style="margin: auto; border: none; background: transparent;">Loading messages...</div>';
        try {
           const res = await api.get(`/chat/sessions/${id}/messages`);
           messages.innerHTML = '';
           if (!res || res.length === 0) {
-             messages.innerHTML = '<div class="empty-state" style="margin: auto; border: none; background: transparent;">Nessun messaggio in questa conversazione.</div>';
+             messages.innerHTML = '<div class="empty-state" style="margin: auto; border: none; background: transparent;">No messages in this conversation.</div>';
           } else {
              res.forEach(msg => appendMessage(msg.role, msg.content, msg.metadata_json ? JSON.parse(msg.metadata_json) : {}));
           }
        } catch (err) {
-          messages.innerHTML = `<div class="error-state">Errore nel caricamento della conversazione: ${esc(err.message)}</div>`;
+          messages.innerHTML = `<div class="error-state">Conversation loading error: ${esc(err.message)}</div>`;
        }
     };
 
@@ -1187,11 +1187,11 @@
 
           document.getElementById('new-chat-btn').addEventListener('click', async () => {
          try {
-            const res = await api.post('/chat/sessions', { title: "Nuova Conversazione" });
+            const res = await api.post('/chat/sessions', { title: "New Conversation" });
             await renderChat();
             loadSession(res.session_id);
          } catch (err) {
-            alert("Errore creazione sessione: " + err.message);
+            alert("Error creating session: " + err.message);
          }
       });
 
@@ -1210,7 +1210,7 @@
       const loadingId = 'loading-' + Date.now();
       const loadingDiv = document.createElement('div');
       loadingDiv.id = loadingId;
-      loadingDiv.innerHTML = '<em>Generazione in corso...</em>';
+      loadingDiv.innerHTML = '<em>Generating...</em>';
       loadingDiv.style.alignSelf = 'flex-start';
       loadingDiv.style.color = 'var(--muted)';
       messages.appendChild(loadingDiv);
@@ -1222,7 +1222,7 @@
         appendMessage('assistant', res.text, res);
       } catch (err) {
         document.getElementById(loadingId).remove();
-        appendMessage('assistant', 'Errore di connessione al backend.', { error_message: err.message });
+        appendMessage('assistant', 'Backend connection error.', { error_message: err.message });
       } finally {
         input.disabled = false;
         sendBtn.disabled = false;
@@ -1249,8 +1249,8 @@ function bindPage() {
       const val = Number(e.target.value);
       try { localStorage.setItem('laya-health-interval', String(val)); } catch {}
       setupHealthPolling();
-      if (val > 0) notify(`Polling stato servizi impostato a ${val} secondi.`, 'info');
-      else notify('Polling automatico dello stato dei servizi sospeso.', 'info');
+      if (val > 0) notify(`Service status polling set to ${val} seconds.`, 'info');
+      else notify('Automatic service status polling suspended.', 'info');
     }, { signal: state.listeners.signal });
     $('#critical-interval')?.addEventListener('change', (e) => {
       const val = Number(e.target.value);
@@ -1352,14 +1352,14 @@ function bindPage() {
       elements.alertResumeWorkflow.addEventListener('click', async () => {
         if (!state.criticalWorkflow) return;
         if (state.servicesHealth.system1.status !== 'online') {
-          notify('Impossibile riprendere: System 1 non è ancora confermato online.', 'error');
+          notify('Cannot resume: System 1 is not yet confirmed online.', 'error');
           return;
         }
         const confirmed = await confirmAction({
           title: 'Riprendere il workflow interrotto?',
           eyebrow: 'RIPRESA SICURA DOPO RIPRISTINO SYSTEM 1',
-          description: 'System 1 è confermato online. La ripresa verificherà lo stato del workflow e richiederà le autorizzazioni necessarie prima di eseguire ulteriori passi.',
-          button: 'Conferma ripresa controllata',
+          description: 'System 1 is confirmed online. Resuming will verify workflow status and request necessary authorizations before executing further steps.',
+          button: 'Confirm controlled resume',
           danger: false,
           summary: {
             workflow_id: state.criticalWorkflow.workflow_id,
@@ -1384,7 +1384,7 @@ function bindPage() {
           state.criticalWorkflow = null;
           await render();
         } catch (err) {
-          notify('Errore durante la ripresa: ' + formatErrorMessage(err), 'error');
+          notify('Error during resume: ' + formatErrorMessage(err), 'error');
         }
       });
     }
