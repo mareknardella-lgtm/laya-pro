@@ -108,3 +108,27 @@ def test_post_message_hard_mode_jev_mocked(monkeypatch):
     assert data["executed_mode"] == "HARD"
     assert "jev" in data["providers_used"]
     assert "Mocked response" in data["text"]
+
+def test_regression_create_session():
+    response = client.post("/api/v1/chat/sessions", json={"title": "Regression Chat Session"})
+    assert response.status_code == 200
+    data = response.json()
+    assert "session_id" in data
+    
+    # Verify the session is listed
+    get_resp = client.get("/api/v1/chat/sessions")
+    assert get_resp.status_code == 200
+    sessions = get_resp.json()
+    assert any(s["session_id"] == data["session_id"] for s in sessions)
+
+def test_regression_create_session():
+    response = client.post("/api/v1/chat/sessions", json={"title": "Regression Chat Session"})
+    assert response.status_code == 200
+    data = response.json()
+    assert "session_id" in data
+    
+    # Verify the session is listed
+    get_resp = client.get("/api/v1/chat/sessions")
+    assert get_resp.status_code == 200
+    sessions = get_resp.json()
+    assert any(s["session_id"] == data["session_id"] for s in sessions)
