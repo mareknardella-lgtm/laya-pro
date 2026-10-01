@@ -1,9 +1,0 @@
-{
-  "name": "laya-pro-operator-dashboard",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "test": "node --test tests/*.test.js",
-    "check": "node --check app.js && node --check tests/dashboard.test.js"
-  }
-}

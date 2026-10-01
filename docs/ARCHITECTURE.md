@@ -1,59 +1,58 @@
 # Architettura di Laya Pro
 
-Laya Pro è una piattaforma AI modulare che implementa il pattern ibrido "System 1 / System 2" per trasformare le richieste dell'utente in esecuzioni strutturate (JEV) o testo libero (Nemotron).
+Laya Pro è una piattaforma AI modulare che unisce due motori con ruoli opposti:
+
+- **System 1 — Nemotron 3.5 Lightning** (`nvidia/nemotron-3.5-lightning-30b-a3b`): modello MoE a bassissima latenza, usato per generare il testo finale.
+- **System 2 — laya-coreml**: runtime di ragionamento profondo locale (Core ML), che produce piani verificabili e giudica le risposte.
+
+L'orchestratore non sceglie un motore: li **fuse**. Il ragionamento profondo decide *cosa* dire, il modello veloce si limita a *dirlo* nel minor tempo possibile.
 
 ## A. Panoramica Generale
 
-Il progetto è strutturato intorno a un **Hybrid Orchestrator** nel backend FastAPI, servito da un database SQLite e governato da un design modulare a provider multipli.
-
-- **Frontend & Dashboard**: Applicazione Single Page (Vanilla JS, HTML, CSS) ospitata staticamente da FastAPI. Fornisce l'interfaccia Chat, il rendering dello stato e il pannello di gestione Memoria e Workflows.
-- **Backend FastAPI**: Servizio Python asincrono che espone API RESTful.
-- **Hybrid Orchestrator**: Coordinatore principale situato in `backend/app/chat/orchestrator.py`. Analizza la richiesta, estrae il contesto di memoria (RAG) e la instrada verso il motore AI corretto.
-- **System 1 (JEV/Laya Local)**: Un motore decisionale veloce non-autoregressivo e strutturato (basato sul modello Laya). Responsabile del routing, autorizzazione, policy e pianificazione. (Spesso esegue task offline tramite PyTorch).
-- **System 2 (Nemotron)**: Un LLM di grandi dimensioni (`nemotron-4-340b-instruct`) fornito dall'API NVIDIA, dedicato al ragionamento profondo e alla generazione linguistica naturale.
-- **SQLite Database**: Gestisce `chat_sessions`, `chat_messages` e `memory_entries`.
+- **Backend FastAPI** (`backend/app/main.py`): API REST asincrona.
+- **Hybrid Orchestrator** (`backend/app/chat/orchestrator.py`): coordina memoria, contesto, i due motori e il ciclo di revisione.
+- **laya-coreml Adapter** (`backend/app/systems/laya/`): contratto tipizzato `ReasoningPlan` + `Critique`, fail-closed.
+- **Nemotron Adapter** (`backend/app/systems/nemotron/`): contratto tipizzato `GenerationResponse`, fail-closed.
+- **Memory Manager** (`backend/app/memory/`): estrazione dei fatti e retrieval lessicale su SQLite.
+- **SQLite** (`backend/app/storage/sqlite.py`): `chat_sessions`, `chat_messages`, `memory_entries`, `orchestration_traces`.
 
 ---
 
-## B. Flusso delle Richieste (Modalità LOW, MEDIUM, HARD)
+## B. Flusso delle Richieste
 
-L'utente invia un messaggio tramite la UI. FastAPI instrada il payload all'Orchestratore, il quale si comporta diversamente a seconda della modalità selezionata:
-
-1. **LOW (Risposta Diretta)**
-   - Viene interpellato esclusivamente System 2 (Nemotron).
-   - È la modalità conversazionale pura. L'Orchestratore recupera la memoria a lungo termine, la aggiunge come System Prompt e chiede a Nemotron di rispondere all'utente.
-   - *Stato effettivo: Operativo.*
-
-2. **MEDIUM (Collaborazione)**
-   - L'Orchestratore chiede a **System 1 (JEV)** di creare un piano d'azione rapido e strutturato.
-   - Il piano strutturato (in JSON) viene quindi passato al contesto di Nemotron, il quale lo converte in risposta umana o ne valida la logica.
-   - *Stato effettivo: JEV attualmente risponde con `JEVUnavailable` nel codice, fungendo da fail-safe finché il backend locale PyTorch non è online.*
-
-3. **HARD (Pianificazione Approfondita)**
-   - Simile a Medium, ma JEV viene incaricato di scomporre il problema in sotto-step complessi, verificando policy di sicurezza incrociate prima di chiamare Nemotron.
-   - *Stato effettivo: Restituisce `JEVUnavailable`.*
-
----
-
-## C. Componenti e Responsabilità
-
-| Componente | Percorso | Responsabilità | Stato |
+| Modalità | Pipeline | Chiamate | Latenza tipica |
 |---|---|---|---|
-| **Hybrid Orchestrator** | `backend/app/chat/orchestrator.py` | Coordina memoria, chiamate a Nemotron e JEV, formatta l'output. | Operativo |
-| **Nemotron Adapter** | `backend/app/systems/system2/adapter.py` | Costruisce le richieste REST per le API NVIDIA (System 2). | Operativo |
-| **JEV Adapter** | `backend/app/chat/jev.py` | Gestisce i payload strutturati Pydantic verso JEV (System 1). | Parziale (`JEVUnavailable`) |
-| **Memory Manager** | `backend/app/memory/manager.py` | Gestisce salvataggio e Retrieval (CRUD) della memoria RAG globale. | Operativo |
-| **SQLite DB** | `backend/app/storage/sqlite.py` | Definisce tabelle per audit, workflow, chat, sessioni. | Operativo |
+| **LOW** | `Nemotron` | 1 (+1 estrazione memoria) | minima |
+| **MEDIUM** | `laya-coreml.reason` → `Nemotron` | 2 (+1) | media |
+| **HARD** | `laya-coreml.reason` → `Nemotron` → `laya-coreml.critique` → `Nemotron` (revisione) | 3–5 (+1) | alta, ma controllata |
+
+**LOW** — il messaggio va diretto al tier veloce con contesto di memoria e cronologia. Nessun passaggio di ragionamento: nulla da giustificare.
+
+**MEDIUM** — laya-coreml scompone il problema in passi. Il piano (JSON validato da Pydantic) viene iniettato nel prompt del tier veloce, che lo trasforma in risposta naturale.
+
+**HARD** — come MEDIUM ma con piano profondo (`depth: deep`, almeno due passi). Il piano diventa anche contratto di verifica: la bozza viene passata al critico, che restituisce un verdetto strutturato (`approved`, `revisions_required`, `rejected`). In caso di `revisions_required` il tier veloce riscrive la risposta tenendo conto dei problemi elencati, e il ciclo ripete.
+
+Il ciclo di revisione è **sempre limitato** da `LAYA_MAX_REFINEMENTS`. A esaurimento budget l'ultima bozza viene comunque restituita, con `status: "degraded"`: è preferibile una risposta imperfetta dichiarata a una risposta bloccata.
+
+### Fallback del critico
+Se `laya-coreml.critique` non è raggiungibile, l'orchestratore usa il tier veloce come critico testuale (`APPROVED` oppure righe `GAP: ...`). Il trace registra esplicitamente quale motore ha giudicato: un giudizio più debole è utile, un giudizio dichiarato male no.
+
+---
+
+## C. Principi di progetto
+
+1. **Fail-closed sul ragionamento.** Se laya-coreml non produce un piano valido, la richiesta fallisce con `503`. Non esiste un fallback "silenzioso" in cui il tier veloce risponde fingendo di aver ragionato.
+2. **Il trace è parte della risposta.** Ogni hop è registrato in `ChatResponse.trace` con engine e latenza: il costo della fusione è visibile, non sottinteso.
+3. **La memoria non blocca mai.** Fallimenti in retrieval o estrazione vengono loggati e ignorati; degradano la risposta, non la impediscono.
+4. **Nessuna answer fabricata.** Ogni motore validato da Pydantic; ogni risposta che non rispetta il contratto diventa errore `502`, non un valore di default.
 
 ---
 
 ## D. Memoria e Persistenza
 
-La memoria di Laya Pro è basata su **SQLite** (non usa veri indici vettoriali, ma un approccio Retrieval semantico filtrato tramite l'LLM stesso per semplicità architetturale out-of-the-box).
-
-- **Chat History**: Ogni messaggio viene salvato in `chat_messages` con una `session_id`. Se chiudi il browser e lo riapri, FastAPI ricostruisce la schermata rileggendo la history.
-- **RAG (Long-Term Memory)**: Se abilitato dalla UI ("Memoria Auto"), dopo ogni scambio andato a buon fine, l'Orchestratore invia un prompt invisibile a Nemotron per "estrarre fatti permanenti" dalla chat. I fatti vengono salvati in `memory_entries` con scope globale.
-- Durante le chat successive, Laya richiama i ricordi e passa l'intero pacchetto all'LLM chiedendogli di filtrare e usare solo quelli pertinenti al messaggio attuale.
+- **Cronologia**: ogni turno è salvato in `chat_messages` con `session_id`; gli ultimi 10 messaggi finiscono nel prompt successivo.
+- **Estrazione**: dopo ogni scambio riuscito, il tier veloce riceve un prompt invisibile per estrarre i fatti durevoli (`nome: Ada`). Le righe `key: value` diventano righe in `memory_entries`.
+- **Retrieval**: scoring lessicale deterministico, non una chiamata extra all'LLM. Tiene il percorso memoria fuori dal budget di latenza del tier veloce; entrano nel prompt solo le voci sopra una soglia di pertinenza.
 
 ---
 
@@ -63,46 +62,40 @@ La memoria di Laya Pro è basata su **SQLite** (non usa veri indici vettoriali, 
 
 ```mermaid
 graph TD
-    UI[Frontend Dashboard JS] -->|REST API| API[FastAPI Backend]
-    API --> ORCH[Hybrid Orchestrator]
-    
-    ORCH -->|CRUD| DB[(SQLite Database)]
-    DB --> MEM[Memory & History Tables]
-    
-    ORCH -->|Prompt| SYS2[System 2: Nemotron NVIDIA]
-    ORCH -->|JSON Payload| SYS1[System 1: JEV/Laya Local]
+    UI[Client HTTP] -->|REST| API[FastAPI]
+    API --> ORCH[HybridOrchestrator]
+    ORCH --> MEM[Memory Manager]
+    ORCH --> DB[(SQLite)]
+    ORCH -->|reason / critique| LAYA[laya-coreml · deep reasoning]
+    ORCH -->|generate / refine| NEMO[Nemotron 3.5 Lightning · fast]
+    NEMO -.->|estrazione fatti| MEM
 ```
 
-### 2. Flusso di Recupero Memoria (RAG)
+### 2. Flusso HARD con revisione
+
+```mermaid
+flowchart TD
+    MSG[Messaggio utente] --> REASON[laya-coreml reason · depth=deep]
+    REASON --> PLAN[Piano validato · ReasoningPlan]
+    PLAN --> DRAFT[Nemotron genera la bozza]
+    DRAFT --> JUDGE[laya-coreml critique]
+    JUDGE -->|approved| OUT[Risposta finale]
+    JUDGE -->|revisions_required| REV[Nemotron riscrive]
+    REV --> JUDGE
+    JUDGE -.->|budget esaurito| DEG[Ultima bozza · status=degraded]
+```
+
+### 3. Fail-closed
 
 ```mermaid
 sequenceDiagram
-    participant User
-    participant Orchestrator
-    participant Database
-    participant System2
-    
-    User->>Orchestrator: Invia messaggio ("Ciao!")
-    Orchestrator->>Database: get_messages(session_id)
-    Database-->>Orchestrator: [Ultimi 10 messaggi]
-    Orchestrator->>Database: get_all_memories()
-    Database-->>Orchestrator: [Lista di fatti]
-    Orchestrator->>System2: Estrai i fatti pertinenti
-    System2-->>Orchestrator: Fatti filtrati
-    Orchestrator->>System2: Prompt finale (Contesto + Storia + Messaggio)
-    System2-->>Orchestrator: Risposta finale
-    Orchestrator-->>User: Visualizzazione risposta
-```
-
-### 3. Collaborazione Inter-Modello (Modalità MEDIUM)
-
-```mermaid
-flowchart LR
-    MSG[Messaggio Utente] --> ORCH[Orchestratore]
-    ORCH -->|1. Richiesta Piano| JEV[System 1 - JEV]
-    JEV -->|2. Piano JSON strutturato| ORCH
-    ORCH -->|3. Passaggio Contesto + Piano| NEMO[System 2 - Nemotron]
-    NEMO -->|4. Testo fluido| OUT[Risposta Utente]
-    
-    JEV -.->|Se Assente| ERR(Exception: JEVUnavailable)
+    participant U as Client
+    participant O as Orchestrator
+    participant L as laya-coreml
+    participant N as Nemotron
+    U->>O: tier=MEDIUM
+    O->>L: reason(problema)
+    L--xO: errore / contratto invalido
+    O-->>U: 503 · nessuna risposta inventata
+    Note over O,N: il tier veloce NON viene invocato
 ```

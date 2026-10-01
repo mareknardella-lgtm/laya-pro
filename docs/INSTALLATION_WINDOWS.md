@@ -1,47 +1,61 @@
-﻿# Installazione su Windows
-
-L'installazione su Windows richiede PowerShell. Tutte le dipendenze, incluso il bridge CPU PyTorch per laya-coreml, verranno gestite automaticamente.
+# Installazione su Windows
 
 ## Prerequisiti
+
 - Windows 10 o superiore.
-- Python 3.10+ installato e disponibile nel PATH.
+- [Python 3.9+](https://www.python.org/downloads/windows/) installato e **nel PATH** (spunta *"Add python.exe to PATH"* durante l'installazione).
 
 ## Passaggi
-1. Clona il repository o estrai i file del progetto.
-2. Apri PowerShell come amministratore (o assicurati di avere i permessi di esecuzione).
-3. Esegui il seguente comando dalla root del progetto:
 
-\\\powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\start.ps1"
-\\\
-"@ -Encoding UTF8
+1. Clona il repository ed entra nella cartella:
 
-Set-Content -Path "c:\Users\Marek\Desktop\Laya Pro\docs\INSTALLATION_MACOS.md" -Value @"
-# Installazione su macOS
+   ```powershell
+   git clone https://github.com/mareknardella-lgtm/laya-pro.git
+   cd laya-pro
+   ```
 
-L'installazione su macOS sfrutta l'ecosistema Unix nativo e può teoricamente sfruttare l'accelerazione backend Core ML dove appropriato.
+2. Crea l'ambiente virtuale e attivalo:
 
-## Prerequisiti
-- macOS 12 (Monterey) o superiore.
-- Python 3.10+ installato (preferibilmente tramite Homebrew).
+   ```powershell
+   python -m venv .venv
+   .venv\Scripts\Activate.ps1
+   ```
 
-## Passaggi
-1. Clona il repository o estrai i file del progetto.
-2. Apri il Terminale.
-3. Esegui il seguente comando dalla root del progetto:
+   Se PowerShell blocca lo script di attivazione, per la sessione corrente basta:
 
-\\\ash
-bash ./scripts/start.sh
-\\\
-"@ -Encoding UTF8
+   ```powershell
+   Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+   ```
 
-Set-Content -Path "c:\Users\Marek\Desktop\Laya Pro\docs\QUICKSTART.md" -Value @"
-# Guida Rapida
+3. Installa le dipendenze:
 
-Benvenuti in Laya Pro! Segui questi passaggi per avviare rapidamente la piattaforma.
+   ```powershell
+   pip install -r requirements.txt
+   ```
 
-1. Installa Laya Pro seguendo le istruzioni per il tuo sistema operativo ([Windows](INSTALLATION_WINDOWS.md) o [macOS](INSTALLATION_MACOS.md)).
-2. Configura i tuoi provider AI (vedi [Provider Supportati](PROVIDERS.md)).
-3. Avvia la piattaforma e inizia a interagire con l'assistente.
+4. Crea il file di configurazione e inserisci la tua chiave NVIDIA (la trovi su [build.nvidia.com](https://build.nvidia.com/)):
 
-Esplora le [Modalità AI](AI_MODES.md) per capire come Laya Pro gestisce le richieste.
+   ```powershell
+   copy .env.example .env
+   notepad .env
+   ```
+
+   ```dotenv
+   NEMOTRON_API_KEY=nvapi-...
+   ```
+
+5. Avvia tutto:
+
+   ```powershell
+   python run.py --with-stub
+   ```
+
+   In alternativa fai doppio clic su **`start.bat`**, che fa gli stessi passi dalla cartella corrente.
+
+6. Apri **http://127.0.0.1:8000** nel browser.
+
+## Note
+
+- `run.py --with-stub` avvia anche lo stand-in di laya-coreml in un processo separato. Senza quel flag funziona solo la modalita' LOW.
+- La prima risposta dopo una pausa puo' impiegare anche due minuti: l'endpoint NVIDIA trial e' un'istanza condivisa che va in cold start. Vedi [TROUBLESHOOTING.md](TROUBLESHOOTING.md).
+- Se la porta 8000 e' occupata: `python run.py --with-stub --port 8080`.

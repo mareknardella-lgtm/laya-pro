@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="it" data-theme="auto">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Laya Pro</title>
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<div class="app" id="app">
+
+  <!-- Sidebar -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-head">
+      <button class="new-chat" id="new-chat" title="Nuova conversazione">
+        <svg viewBox="0 0 24 24" class="icon"><path d="M12 5v14M5 12h14"/></svg>
+        <span>Nuova chat</span>
+      </button>
+      <button class="icon-btn only-mobile" id="close-sidebar" title="Chiudi">
+        <svg viewBox="0 0 24 24" class="icon"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+
+    <nav class="session-list" id="session-list" aria-label="Conversazioni"></nav>
+
+    <div class="sidebar-foot">
+      <div class="engine-chips" id="engine-chips"></div>
+      <button class="ghost-btn" id="open-memory">
+        <svg viewBox="0 0 24 24" class="icon"><path d="M12 5a7 7 0 1 0 7 7 7 7 0 0 0-7-7Z"/><path d="M12 9v6M9 12h6"/></svg>
+        <span>Memoria</span>
+        <span class="count" id="memory-count"></span>
+      </button>
+      <button class="ghost-btn" id="theme-toggle" title="Tema">
+        <svg viewBox="0 0 24 24" class="icon"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
+        <span id="theme-label">Tema</span>
+      </button>
+    </div>
+  </aside>
+  <div class="scrim" id="scrim"></div>
+
+  <!-- Main -->
+  <main class="main">
+    <header class="topbar">
+      <button class="icon-btn only-mobile" id="open-sidebar" title="Menu">
+        <svg viewBox="0 0 24 24" class="icon"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+      </button>
+      <div class="topbar-title">
+        <h1 id="topbar-title">Laya Pro</h1>
+        <p class="topbar-sub" id="topbar-sub">Pipeline ibrida</p>
+      </div>
+
+      <div class="tier-switch" role="tablist" aria-label="Modalità AI">
+        <button class="tier-btn" data-tier="LOW" role="tab">
+          <b>LOW</b><small>veloce</small>
+        </button>
+        <button class="tier-btn is-active" data-tier="MEDIUM" role="tab">
+          <b>MEDIUM</b><small>piano + risposta</small>
+        </button>
+        <button class="tier-btn" data-tier="HARD" role="tab">
+          <b>HARD</b><small>con revisione</small>
+        </button>
+      </div>
+    </header>
+
+    <div class="notice" id="notice" hidden></div>
+
+    <section class="messages" id="messages" aria-live="polite"></section>
+
+    <div class="composer-wrap">
+      <div class="composer" id="composer">
+        <textarea id="input" rows="1" placeholder="Scrivi un messaggio…" autocomplete="off"></textarea>
+        <div class="composer-actions">
+          <label class="mem-toggle" title="Estrai e riusa i fatti nelle prossime chat">
+            <input type="checkbox" id="auto-memory" checked>
+            <span>Memoria</span>
+          </label>
+          <button class="send-btn" id="send" title="Invia" aria-label="Invia">
+            <svg viewBox="0 0 24 24" class="icon"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+          </button>
+        </div>
+      </div>
+      <p class="hint">
+        <b id="hint-tier">MEDIUM</b> · <span id="hint-flow">laya-coreml pianifica → Nemotron scrive</span>
+        <span class="kbd-hint">Invio per inviare · Maiusc+Invio per a capo</span>
+      </p>
+    </div>
+  </main>
+</div>
+
+<div class="toast" id="toast" hidden></div>
+
+<!-- Memory drawer -->
+<div class="drawer-scrim" id="drawer-scrim" hidden></div>
+<aside class="drawer" id="memory-drawer" hidden aria-label="Memoria">
+  <header class="drawer-head">
+    <div>
+      <h2>Memoria</h2>
+      <p>Fatti che Laya ricorda tra una chat e l'altra.</p>
+    </div>
+    <button class="icon-btn" id="close-memory" title="Chiudi">
+      <svg viewBox="0 0 24 24" class="icon"><path d="M18 6 6 18M6 6l12 12"/></svg>
+    </button>
+  </header>
+
+  <form class="memory-form" id="memory-form">
+    <input id="memory-key" placeholder="chiave" autocomplete="off" maxlength="200" required>
+    <input id="memory-value" placeholder="valore da ricordare" autocomplete="off" maxlength="4000" required>
+    <button type="submit" class="memory-save">
+      <svg viewBox="0 0 24 24" class="icon"><path d="M12 5v14M5 12h14"/></svg>
+      <span>Aggiungi</span>
+    </button>
+  </form>
+
+  <div class="memory-search">
+    <input id="memory-search" placeholder="Cerca nei ricordi…" autocomplete="off">
+  </div>
+
+  <div class="memory-list" id="memory-list"></div>
+</aside>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

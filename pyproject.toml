@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "laya-pro"
+version = "1.0.0"
+description = "Hybrid System 1/2 orchestrator: laya-coreml reasoning + Nemotron 3.5 Lightning generation"
+requires-python = ">=3.9"
+dependencies = [
+    "fastapi>=0.110",
+    "uvicorn>=0.27",
+    "pydantic>=2.6",
+    "pydantic-settings>=2.2",
+    "httpx>=0.27",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[tool.setuptools.packages.find]
+include = ["backend*"]
+
+[tool.setuptools.package-data]
+"backend.app" = ["static/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["backend/tests"]

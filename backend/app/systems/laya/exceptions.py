@@ -1,21 +1,23 @@
-"""Failures for an optional external Laya runtime."""
+"""Errors raised when the laya-coreml runtime is unavailable or breaks contract."""
+
+from __future__ import annotations
 
 
-class LayaAdapterError(RuntimeError):
-    """Base class; an adapter failure is never an execution authorization."""
+class LayaError(RuntimeError):
+    """Base class for every System 2 failure."""
 
 
-class LayaNotConfiguredError(LayaAdapterError):
-    """No verified runtime endpoint has been configured."""
+class LayaUnavailable(LayaError):
+    """The reasoning runtime is not configured or not reachable."""
 
 
-class LayaRuntimeError(LayaAdapterError):
-    """The configured runtime failed, timed out, or violated the adapter contract."""
+class LayaContractError(LayaError):
+    """The runtime replied with something that is not a valid reasoning plan."""
 
 
-class LayaAuthError(LayaRuntimeError):
-    """Authentication to the Laya runtime failed (HTTP 401/403)."""
+class LayaRefusal(LayaError):
+    """The runtime explicitly declined to reason about the request."""
 
-
-class LayaContractError(LayaRuntimeError):
-    """The remote response does not match Laya Pro's normalized schema."""
+    def __init__(self, message: str, reason: str = "") -> None:
+        super().__init__(message)
+        self.reason = reason

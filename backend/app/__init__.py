@@ -1,1 +1,0 @@
-"""Laya Pro local backend."""

@@ -15,28 +15,21 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.9'
           cache: 'pip'
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install -e ./backend[test]
+          pip install -e ".[dev]"
 
-      - name: Security Boundary Check
+      - name: Run test suite
         run: |
-          python scripts/security_boundary_check.py
+          pytest backend/tests/ -q
 
-      - name: Run Backend Pytest Suite
+      - name: Launcher smoke test
+        # run.py is the documented entry point: it must work from any directory,
+        # which is exactly the regression that once shipped a broken file.
         run: |
-          pytest backend/tests/ -v
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Run Frontend Tests
-        run: |
-          npm test --prefix frontend
+          cd /tmp
+          python "$GITHUB_WORKSPACE/run.py" --help

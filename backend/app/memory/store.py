@@ -1,87 +1,122 @@
-"""SQLite-backed persistent project memory with explicit per-project CRUD."""
+"""CRUD persistence for long-term memory entries."""
 
 from __future__ import annotations
 
-import json
-from contextlib import closing
-from datetime import datetime, timezone
-from typing import Any, Optional
-from uuid import uuid4
+import sqlite3
+from typing import List, Optional
 
-from ..storage.sqlite import SQLiteDatabase
+from ..storage.sqlite import Database
 from .models import MemoryEntry, MemoryScope
 
 
-class MemoryStore:
-    def __init__(self, database: SQLiteDatabase) -> None:
-        self._database = database
+def _entry(row: sqlite3.Row) -> MemoryEntry:
+    return MemoryEntry(
+        key=row["key"],
+        value=row["value"],
+        scope=MemoryScope(row["scope"]),
+        pinned=bool(row["pinned"]),
+        updated_at=row["updated_at"],
+    )
 
-    def put(self, project_id: str, key: str, value: Any) -> MemoryEntry:
-        now = datetime.now(timezone.utc)
-        encoded = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-        with self._database.transaction() as connection:
-            existing = connection.execute(
-                "SELECT entry_id, created_at FROM memory_entries WHERE project_id = ? AND memory_key = ?",
-                (project_id, key),
-            ).fetchone()
-            entry_id = existing["entry_id"] if existing else str(uuid4())
-            created_at = existing["created_at"] if existing else now.isoformat()
-            connection.execute(
-                """INSERT INTO memory_entries (entry_id, project_id, memory_key, value_json, sensitivity, created_at, updated_at)
-                VALUES (?, ?, ?, ?, 'normal', ?, ?)
-                ON CONFLICT(project_id, memory_key) DO UPDATE SET
-                    value_json = excluded.value_json, sensitivity = excluded.sensitivity, updated_at = excluded.updated_at""",
-                (entry_id, project_id, key, encoded, created_at, now.isoformat()),
-            )
-        return MemoryEntry(
-            project_id=project_id,
-            key=key,
-            value=value,
-            scope=MemoryScope.PERSISTENT,
-            created_at=datetime.fromisoformat(created_at),
-            updated_at=now,
+
+class MemoryStore:
+    def __init__(self, database: Database) -> None:
+        self._db = database
+
+    async def put(self, entry: MemoryEntry) -> None:
+        await self._db.run(self._put_sync, entry)
+
+    def _put_sync(self, connection: sqlite3.Connection, entry: MemoryEntry) -> None:
+        connection.execute(
+            """
+            INSERT INTO memory_entries (key, value, scope, pinned, updated_at)
+            VALUES (?, ?, ?, ?, datetime('now'))
+            ON CONFLICT(key, scope) DO UPDATE SET
+                value = excluded.value,
+                pinned = MAX(memory_entries.pinned, excluded.pinned),
+                updated_at = excluded.updated_at
+            """,
+            (entry.key, entry.value, entry.scope.value, int(entry.pinned)),
         )
 
-    def get(self, project_id: str, key: str) -> Optional[MemoryEntry]:
-        with closing(self._database.connect()) as connection:
-            row = connection.execute(
-                "SELECT * FROM memory_entries WHERE project_id = ? AND memory_key = ?",
-                (project_id, key),
-            ).fetchone()
+    async def put_many(self, entries: List[MemoryEntry]) -> int:
+        await self._db.run(self._put_many_sync, entries)
+        return len(entries)
+
+    def _put_many_sync(self, connection: sqlite3.Connection, entries: List[MemoryEntry]) -> None:
+        connection.executemany(
+            """
+            INSERT INTO memory_entries (key, value, scope, pinned, updated_at)
+            VALUES (?, ?, ?, ?, datetime('now'))
+            ON CONFLICT(key, scope) DO UPDATE SET
+                value = excluded.value,
+                pinned = MAX(memory_entries.pinned, excluded.pinned),
+                updated_at = excluded.updated_at
+            """,
+            [(e.key, e.value, e.scope.value, int(e.pinned)) for e in entries],
+        )
+
+    async def all(self, scope: MemoryScope = MemoryScope.PERSISTENT) -> List[MemoryEntry]:
+        rows = await self._db.run(self._all_sync, scope.value)
+        return [_entry(row) for row in rows]
+
+    def _all_sync(self, connection: sqlite3.Connection, scope: str) -> List[sqlite3.Row]:
+        cursor = connection.execute(
+            "SELECT key, value, scope, pinned, updated_at FROM memory_entries "
+            "WHERE scope = ? ORDER BY pinned DESC, updated_at DESC",
+            (scope,),
+        )
+        return cursor.fetchall()
+
+    async def get(
+        self, key: str, scope: MemoryScope = MemoryScope.PERSISTENT
+    ) -> Optional[MemoryEntry]:
+        row = await self._db.run(self._get_sync, key, scope.value)
         if row is None:
             return None
-        return MemoryEntry(
-            project_id=row["project_id"],
-            key=row["memory_key"],
-            value=json.loads(row["value_json"]),
-            scope=MemoryScope.PERSISTENT,
-            created_at=datetime.fromisoformat(row["created_at"]),
-            updated_at=datetime.fromisoformat(row["updated_at"]),
+        return _entry(row)
+
+    def _get_sync(self, connection: sqlite3.Connection, key: str, scope: str) -> Optional[sqlite3.Row]:
+        cursor = connection.execute(
+            "SELECT key, value, scope, pinned, updated_at FROM memory_entries "
+            "WHERE key = ? AND scope = ?",
+            (key, scope),
         )
+        return cursor.fetchone()
 
-    def list(self, project_id: str, limit: int = 100) -> list[MemoryEntry]:
-        bounded = max(1, min(limit, 500))
-        with closing(self._database.connect()) as connection:
-            rows = connection.execute(
-                "SELECT * FROM memory_entries WHERE project_id = ? ORDER BY memory_key LIMIT ?",
-                (project_id, bounded),
-            ).fetchall()
-        return [
-            MemoryEntry(
-                project_id=row["project_id"],
-                key=row["memory_key"],
-                value=json.loads(row["value_json"]),
-                scope=MemoryScope.PERSISTENT,
-                created_at=datetime.fromisoformat(row["created_at"]),
-                updated_at=datetime.fromisoformat(row["updated_at"]),
-            )
-            for row in rows
-        ]
+    async def count(self, scope: MemoryScope = MemoryScope.PERSISTENT) -> int:
+        return await self._db.run(self._count_sync, scope.value)
 
-    def delete(self, project_id: str, key: str) -> bool:
-        with self._database.transaction() as connection:
-            cursor = connection.execute(
-                "DELETE FROM memory_entries WHERE project_id = ? AND memory_key = ?",
-                (project_id, key),
-            )
-        return cursor.rowcount == 1
+    def _count_sync(self, connection: sqlite3.Connection, scope: str) -> int:
+        cursor = connection.execute(
+            "SELECT COUNT(*) AS total FROM memory_entries WHERE scope = ?", (scope,)
+        )
+        return int(cursor.fetchone()["total"])
+
+    async def delete(self, key: str, scope: MemoryScope = MemoryScope.PERSISTENT) -> bool:
+        return await self._db.run(self._delete_sync, key, scope.value)
+
+    def _delete_sync(self, connection: sqlite3.Connection, key: str, scope: str) -> bool:
+        cursor = connection.execute(
+            "DELETE FROM memory_entries WHERE key = ? AND scope = ?", (key, scope)
+        )
+        return cursor.rowcount > 0
+
+    @staticmethod
+    def parse_extraction(text: str) -> List[MemoryEntry]:
+        """Parse the 'key: value' lines the fast model is asked to produce."""
+
+        entries: List[MemoryEntry] = []
+        for raw_line in text.splitlines():
+            line = raw_line.strip().lstrip("-*• ").strip()
+            if not line or line.upper() == "NONE" or ":" not in line:
+                continue
+            key, _, value = line.partition(":")
+            key = key.strip()
+            value = value.strip()
+            if not key or not value:
+                continue
+            if len(key) > 200 or len(value) > 4_000:
+                continue
+            entries.append(MemoryEntry(key=key, value=value))
+        return entries

@@ -1,28 +1,60 @@
-﻿# Installazione su macOS
+# Installazione su macOS
 
-L'installazione su macOS sfrutta l'ecosistema Unix nativo e può teoricamente sfruttare l'accelerazione backend Core ML dove appropriato.
+Questa guida vale per macOS e Linux.
 
 ## Prerequisiti
+
 - macOS 12 (Monterey) o superiore.
-- Python 3.10+ installato (preferibilmente tramite Homebrew).
+- Python 3.9+ installato e nel PATH:
+
+  ```bash
+  brew install python
+  ```
 
 ## Passaggi
-1. Clona il repository o estrai i file del progetto.
-2. Apri il Terminale.
-3. Esegui il seguente comando dalla root del progetto:
 
-\\\ash
-bash ./scripts/start.sh
-\\\
-"@ -Encoding UTF8
+1. Clona il repository ed entra nella cartella:
 
-Set-Content -Path "c:\Users\Marek\Desktop\Laya Pro\docs\QUICKSTART.md" -Value @"
-# Guida Rapida
+   ```bash
+   git clone https://github.com/mareknardella-lgtm/laya-pro.git
+   cd laya-pro
+   ```
 
-Benvenuti in Laya Pro! Segui questi passaggi per avviare rapidamente la piattaforma.
+2. Crea l'ambiente virtuale e attivalo:
 
-1. Installa Laya Pro seguendo le istruzioni per il tuo sistema operativo ([Windows](INSTALLATION_WINDOWS.md) o [macOS](INSTALLATION_MACOS.md)).
-2. Configura i tuoi provider AI (vedi [Provider Supportati](PROVIDERS.md)).
-3. Avvia la piattaforma e inizia a interagire con l'assistente.
+   ```bash
+   python3 -m venv .venv
+   source .venv/bin/activate
+   ```
 
-Esplora le [Modalità AI](AI_MODES.md) per capire come Laya Pro gestisce le richieste.
+3. Installa le dipendenze:
+
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+4. Crea il file di configurazione e inserisci la tua chiave NVIDIA (la trovi su [build.nvidia.com](https://build.nvidia.com/)):
+
+   ```bash
+   cp .env.example .env
+   nano .env
+   ```
+
+   ```dotenv
+   NEMOTRON_API_KEY=nvapi-...
+   ```
+
+5. Avvia tutto:
+
+   ```bash
+   python run.py --with-stub
+   ```
+
+6. Apri **http://127.0.0.1:8000** nel browser.
+
+## Note
+
+- `run.py --with-stub` avvia anche lo stand-in di laya-coreml in un processo separato. Senza quel flag funziona solo la modalita' LOW.
+- Non esiste uno `start.sh`: il launcher Python e' lo stesso su tutti i sistemi operativi.
+- La prima risposta dopo una pausa puo' impiegare anche due minuti: l'endpoint NVIDIA trial e' un'istanza condivisa che va in cold start. Vedi [TROUBLESHOOTING.md](TROUBLESHOOTING.md).
+- Su macOS un eventuale runtime Core ML per laya-coreml potra' sfruttare l'accelerazione neurale locale; oggi nel repository c'e' solo lo stand-in (vedi [LAYA_COREML_STUB.md](LAYA_COREML_STUB.md)).

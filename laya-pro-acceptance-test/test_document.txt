@@ -1,2 +1,0 @@
-Initial content for Laya Pro acceptance testing.
-Modification verified through Laya Pro.

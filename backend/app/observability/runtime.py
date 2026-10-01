@@ -1,70 +1,72 @@
-"""Process-local health observations that retain metadata only, never prompts or raw errors."""
+"""Runtime health counters shared by both system adapters."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import datetime, timezone
+import threading
+from dataclasses import dataclass, field
 from typing import Optional
 
 
-@dataclass(frozen=True)
-class RuntimeObservationSnapshot:
-    configured: bool
-    status: str
-    last_attempt_at: Optional[datetime]
-    last_successful_at: Optional[datetime]
-    last_latency_ms: Optional[int]
-    last_error_code: Optional[str]
-    native_runtime_verified: bool = False
-
-
+@dataclass
 class RuntimeObservation:
-    def __init__(self) -> None:
-        self._last_attempt_at: Optional[datetime] = None
-        self._last_successful_at: Optional[datetime] = None
-        self._last_latency_ms: Optional[int] = None
-        self._last_error_code: Optional[str] = None
-        self._has_attempt = False
-        self._last_attempt_succeeded = False
+    """Fail-closed telemetry: it records what was attempted, never what was faked."""
+
+    name: str
+    attempts: int = 0
+    successes: int = 0
+    failures: int = 0
+    total_latency_ms: int = 0
+    total_failure_latency_ms: int = 0
+    last_error: Optional[str] = None
+    # Reentrant: snapshot() reads average_latency_ms while already holding the lock.
+    _lock: threading.RLock = field(default_factory=threading.RLock, repr=False)
 
     def attempted(self) -> None:
-        self._has_attempt = True
-        self._last_attempt_succeeded = False
-        self._last_attempt_at = datetime.now(timezone.utc)
-        self._last_error_code = None
+        with self._lock:
+            self.attempts += 1
 
     def succeeded(self, latency_ms: int) -> None:
-        self._has_attempt = True
-        self._last_attempt_succeeded = True
-        self._last_attempt_at = datetime.now(timezone.utc)
-        self._last_successful_at = self._last_attempt_at
-        self._last_latency_ms = max(0, latency_ms)
-        self._last_error_code = None
+        with self._lock:
+            self.successes += 1
+            self.total_latency_ms += max(0, latency_ms)
 
-    def failed(self, error: Exception, latency_ms: int) -> None:
-        self._has_attempt = True
-        self._last_attempt_succeeded = False
-        self._last_attempt_at = datetime.now(timezone.utc)
-        self._last_latency_ms = max(0, latency_ms)
-        self._last_error_code = type(error).__name__[:128]
+    def failed(self, error: BaseException, latency_ms: int) -> None:
+        # Failure latency is tracked separately so the reported average stays
+        # the mean latency of calls that actually succeeded.
+        with self._lock:
+            self.failures += 1
+            self.total_failure_latency_ms += max(0, latency_ms)
+            self.last_error = f"{type(error).__name__}: {error}"
 
-    def snapshot(self, configured: bool) -> RuntimeObservationSnapshot:
-        if not configured:
-            status = "unavailable"
-        elif not self._has_attempt:
-            status = "unknown"
-        elif self._last_attempt_succeeded:
-            status = "healthy"
-        elif self._last_successful_at is not None:
-            status = "degraded"
-        else:
-            status = "unavailable"
-        return RuntimeObservationSnapshot(
-            configured=configured,
-            status=status,
-            last_attempt_at=self._last_attempt_at,
-            last_successful_at=self._last_successful_at,
-            last_latency_ms=self._last_latency_ms,
-            last_error_code=self._last_error_code,
-            native_runtime_verified=False,
-        )
+    @property
+    def average_latency_ms(self) -> Optional[int]:
+        with self._lock:
+            if self.successes == 0:
+                return None
+            return int(self.total_latency_ms / self.successes)
+
+    @property
+    def average_failure_latency_ms(self) -> Optional[int]:
+        with self._lock:
+            if self.failures == 0:
+                return None
+            return int(self.total_failure_latency_ms / self.failures)
+
+    def snapshot(self) -> dict:
+        """Telemetry only.
+
+        Deliberately omits 'configured': that flag belongs to the adapter that
+        knows about the runtime, and duplicating it here let a stale true
+        overwrite the real answer on /status.
+        """
+
+        with self._lock:
+            return {
+                "name": self.name,
+                "attempts": self.attempts,
+                "successes": self.successes,
+                "failures": self.failures,
+                "average_latency_ms": self.average_latency_ms,
+                "average_failure_latency_ms": self.average_failure_latency_ms,
+                "last_error": self.last_error,
+            }

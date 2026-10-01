@@ -1,99 +1,100 @@
-"""Authenticated explicit project memory APIs; memory is context only, never authorization."""
+"""Memory inspection endpoints."""
 
 from __future__ import annotations
 
-import hmac
-from typing import Any, Optional
+from typing import Any, Dict, List
 
-from fastapi import APIRouter, Header, HTTPException, Request
-from pydantic import BaseModel, ConfigDict, Field
+from fastapi import APIRouter, HTTPException, Query, Request
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from ...context.project_context import ProjectContextError
-from ...memory.manager import MemoryManager, MemoryValidationError
 from ...memory.models import MemoryEntry, MemoryScope
-from ...security.session import authorize_operator as _auth_op
 
-router = APIRouter(prefix="/api/v1/memory", tags=["memory"])
-
-
-class MemoryWriteRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    project_id: str = Field(min_length=1, max_length=64)
-    key: str = Field(min_length=1, max_length=128)
-    value: Any
-    scope: MemoryScope = MemoryScope.TEMPORARY
+router = APIRouter(tags=["memory"])
 
 
-def _authorize(request: Request, token: Optional[str]) -> None:
-    _auth_op(request, token)
+class MemoryQueryRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    query: str = Field(min_length=1, max_length=2_000)
+    limit: int = Field(default=10, ge=1, le=50)
 
 
-def _project(request: Request, project_id: str) -> None:
-    try:
-        request.app.state.project_contexts.resolve(project_id)
-    except ProjectContextError as exc:
-        raise HTTPException(status_code=403, detail={"code": "project_not_authorized", "message": str(exc)}) from exc
+class MemoryUpsertRequest(BaseModel):
+    """Lets a user pin a fact the extractor never would have thought of."""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    key: str = Field(min_length=1, max_length=200)
+    value: str = Field(min_length=1, max_length=4_000)
+
+    @field_validator("key")
+    @classmethod
+    def key_is_not_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("Key cannot be blank")
+        return value
 
 
-def _manager(request: Request) -> MemoryManager:
-    return request.app.state.memory_manager
+@router.post("/memory")
+async def upsert_memory(payload: MemoryUpsertRequest, request: Request) -> Dict[str, Any]:
+    container = request.app.state.container
+    existing = await container.memory_store.get(payload.key, MemoryScope.PERSISTENT)
+    entry = MemoryEntry(
+        key=payload.key, value=payload.value, scope=MemoryScope.PERSISTENT, pinned=True
+    )
+    await container.memory_store.put(entry)
+    stored = await container.memory_store.get(payload.key, MemoryScope.PERSISTENT)
+    return {
+        "created": existing is None,
+        "stored": stored.model_dump() if stored else None,
+    }
 
 
-@router.post("", response_model=MemoryEntry)
-def save_memory(
-    body: MemoryWriteRequest,
-    request: Request,
-    x_laya_approval_token: Optional[str] = Header(default=None),
-) -> MemoryEntry:
-    _authorize(request, x_laya_approval_token)
-    _project(request, body.project_id)
-    try:
-        return _manager(request).put(body.project_id, body.key, body.value, body.scope)
-    except MemoryValidationError as exc:
-        raise HTTPException(status_code=422, detail={"code": "memory_value_rejected", "message": str(exc)}) from exc
+@router.post("/memory/query")
+async def query_memory(payload: MemoryQueryRequest, request: Request) -> Dict[str, Any]:
+    container = request.app.state.container
+    entries: List[MemoryEntry] = await container.memory.query(payload.query, payload.limit)
+    return {
+        "query": payload.query,
+        "count": len(entries),
+        "entries": [entry.model_dump() for entry in entries],
+    }
 
 
-@router.get("/{project_id}", response_model=list[MemoryEntry])
-def list_memory(
-    project_id: str,
-    request: Request,
-    scope: MemoryScope = MemoryScope.PERSISTENT,
-    limit: int = 100,
-    x_laya_approval_token: Optional[str] = Header(default=None),
-) -> list[MemoryEntry]:
-    _authorize(request, x_laya_approval_token)
-    _project(request, project_id)
-    return _manager(request).list(project_id, scope, limit)
+@router.get("/memory")
+async def list_memory(request: Request) -> Dict[str, Any]:
+    container = request.app.state.container
+    entries = await container.memory_store.all(MemoryScope.PERSISTENT)
+    return {
+        "count": len(entries),
+        "entries": [entry.model_dump() for entry in entries],
+    }
 
 
-@router.get("/{project_id}/{key}", response_model=Optional[MemoryEntry])
-def get_memory(
-    project_id: str,
-    key: str,
-    request: Request,
-    scope: MemoryScope = MemoryScope.PERSISTENT,
-    x_laya_approval_token: Optional[str] = Header(default=None),
-) -> Optional[MemoryEntry]:
-    _authorize(request, x_laya_approval_token)
-    _project(request, project_id)
-    try:
-        return _manager(request).get(project_id, key, scope)
-    except MemoryValidationError as exc:
-        raise HTTPException(status_code=422, detail={"code": "memory_key_rejected", "message": str(exc)}) from exc
+@router.put("/memory")
+async def edit_memory(
+    payload: MemoryUpsertRequest, request: Request
+) -> Dict[str, Any]:
+    """Edit an existing fact. 404 rather than silently creating a new one."""
+
+    container = request.app.state.container
+    existing = await container.memory_store.get(payload.key, MemoryScope.PERSISTENT)
+    if existing is None:
+        raise HTTPException(status_code=404, detail="memory entry not found")
+    entry = MemoryEntry(
+        key=payload.key, value=payload.value, scope=MemoryScope.PERSISTENT, pinned=True
+    )
+    await container.memory_store.put(entry)
+    stored = await container.memory_store.get(payload.key, MemoryScope.PERSISTENT)
+    return {"stored": stored.model_dump() if stored else None}
 
 
-@router.delete("/{project_id}/{key}")
-def delete_memory(
-    project_id: str,
-    key: str,
-    request: Request,
-    scope: MemoryScope = MemoryScope.PERSISTENT,
-    x_laya_approval_token: Optional[str] = Header(default=None),
-) -> dict[str, bool]:
-    _authorize(request, x_laya_approval_token)
-    _project(request, project_id)
-    try:
-        return {"deleted": _manager(request).delete(project_id, key, scope)}
-    except MemoryValidationError as exc:
-        raise HTTPException(status_code=422, detail={"code": "memory_key_rejected", "message": str(exc)}) from exc
+@router.delete("/memory")
+async def delete_memory(
+    request: Request, key: str = Query(min_length=1, max_length=200)
+) -> Dict[str, Any]:
+    container = request.app.state.container
+    deleted = await container.memory_store.delete(key)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="memory entry not found")
+    return {"deleted": key}

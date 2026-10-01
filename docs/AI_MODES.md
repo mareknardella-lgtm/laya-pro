@@ -1,18 +1,50 @@
-﻿# Modalità AI
+# Modalità AI
 
-Laya Pro implementa tre modalità operative principali, bilanciando l'uso tra System 1 (JEV) e System 2 (Nemotron).
+Ogni richiesta dichiara una modalità, che decide **quanto della pipeline ibrida** può spendere.
 
-## LOW
-- **Flusso**: Diretto a Nemotron.
-- **Stato**: Operativa.
-- **Descrizione**: La richiesta dell'utente viene inviata direttamente al modello di linguaggio (System 2) senza pianificazione intermedia. Ideale per compiti conversazionali e risposte dirette.
+## LOW — il tier veloce da solo
+- **Flusso**: `Nemotron 3.5 Lightning`.
+- **Chiamate**: 1 (più 1 estrazione memoria se attiva).
+- **Quando**: conversazione, domande fattuali, risposte brevi.
+- **Stato**: operativa.
 
-## MEDIUM
-- **Flusso**: Pianificazione JEV -> Nemotron.
-- **Stato**: Attualmente fallisce con l'errore \JEVUnavailable\.
-- **Descrizione**: Il System 1 genera un piano d'azione che viene poi interpretato e arricchito da Nemotron. *Nota: Poiché il backend JEV non è ancora completamente connesso, questa modalità restituirà un'eccezione.*
+## MEDIUM — pianifica, poi parla
+- **Flusso**: `laya-coreml` produce il piano → `Nemotron` lo rende in linguaggio naturale.
+- **Chiamate**: 2 (più 1 estrazione memoria).
+- **Quando**: problemi che richiedono struttura ma non riscrittute ripetute.
+- **Stato**: operativa.
 
-## HARD
-- **Flusso**: Pianificazione JEV Profonda -> Nemotron.
-- **Stato**: Attualmente fallisce con l'errore \JEVUnavailable\.
-- **Descrizione**: Coinvolge un'analisi multi-step e iterativa da parte di JEV prima di passare i risultati a Nemotron. *Nota: Condivide le stesse limitazioni attuali della modalità MEDIUM.*
+## HARD — pianifica, parla, si fa correggere
+- **Flusso**: `laya-coreml` ragiona in profondità → `Nemotron` genera → `laya-coreml` **critica** la bozza → `Nemotron` riscrive se il critico trova problemi.
+- **Chiamate**: da 3 a 5, in base al numero di revisioni concesse (`LAYA_MAX_REFINEMENTS`, default 2).
+- **Quando**: refactor, analisi con vincoli incrociati, revisione di codice.
+- **Stato**: operativa.
+
+### Come leggere la risposta
+Ogni risposta include `trace[]` con un passo per ogni hop:
+
+```json
+{
+  "text": "...",
+  "tier": "HARD",
+  "status": "success",
+  "engines_used": ["laya-coreml", "nemotron-3.5-lightning-30b-a3b"],
+  "confidence": 0.82,
+  "refinements": 1,
+  "trace": [
+    { "stage": "laya.reason",       "engine": "laya-coreml", "latency_ms": 812 },
+    { "stage": "nemotron.generate", "engine": "nemotron-3.5-lightning-30b-a3b", "latency_ms": 140 },
+    { "stage": "laya.critique",     "engine": "laya-coreml", "latency_ms": 233 },
+    { "stage": "nemotron.refine",   "engine": "nemotron-3.5-lightning-30b-a3b", "latency_ms": 131 }
+  ]
+}
+```
+
+### Valori di `status`
+| Status | Significato |
+|---|---|
+| `success` | La risposta ha superato i controlli previsti. |
+| `degraded` | Budget di revisione esaurito, o il critico ha rifiutato la bozza. La risposta è comunque la migliore disponibile. |
+
+## Fall-closed
+Se il motore di ragionamento è irraggiungibile o risponde in modo incompatibile con il contratto, MEDIUM e HARD falliscono con `503`. Il sistema **non** degrada silenziosamente su LOW: una risposta senza ragionamento che si spaccia per ragionata è un bug, non un fallback.

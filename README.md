@@ -1,69 +1,107 @@
 # Laya Pro
 
-Laya Pro è una piattaforma AI ibrida e modulare progettata per coordinare motori di decisione strutturati (System 1), modelli linguistici generativi (System 2) e strumenti di orchestrazione automatica.
+Orchestratore **ibrido System 1 / System 2** con interfaccia ChatGPT-style.
 
-Il progetto nasce per risolvere la dicotomia tra "ragionamento veloce/strutturato" e "generazione testuale profonda", offrendo un unico ecosistema dove l'utente può conversare e far eseguire workflow complessi sfruttando il meglio di entrambi i mondi.
+Due motori con ruoli opposti, un solo contratto:
 
-Laya Pro integra un **sistema di orchestrazione AI ibrido** che combina analisi strutturata, generazione linguistica e gestione persistente del contesto (memoria globale a lungo termine e history della chat) per trasformare le richieste dell'utente in risposte sicure ed effettive.
+- **laya-coreml** — ragionamento profondo: scompone il problema, produce un piano verificabile, giudica la bozza.
+- **Nemotron 3.5 Lightning** (`nvidia/nemotron-3.5-lightning-30b-a3b`) — generazione veloce: trasforma il piano in risposta naturale.
 
-## Architettura Ibrida (System 1 & System 2)
-
-* **System 1 (JEV / Laya Local)**: Si basa sul modello decisionale veloce [Laya](docs/guides/DOWNLOAD_LAYA.md), ideale per policy, decisioni rapide e generazione di piani d'azione (ragionamento strutturato).
-* **System 2 (Nemotron)**: Sfrutta il modello `nemotron-4-340b-instruct` tramite NVIDIA AI per elaborare il linguaggio naturale e gestire ragionamenti complessi.
-
-Maggiori dettagli architetturali (inclusi i diagrammi di flusso e il ruolo di **Core ML** limitato all'ecosistema macOS e delegato via PyTorch su Windows) sono disponibili in [ARCHITECTURE.md](docs/ARCHITECTURE.md).
-
-## Modalità di Conversazione AI (AI Chat)
-Laya Pro espone tre modalità operative all'interno della dashboard:
-1. **LOW**: Risposta diretta tramite System 2 (Nemotron).
-2. **MEDIUM**: Collaborazione (JEV crea il piano, Nemotron genera la risposta).
-3. **HARD**: Pianificazione strutturata profonda con vincoli via JEV.
-
-*(Nota: Allo stato attuale, il backend per le modalità Medium/Hard solleva elegantemente l'eccezione costruttiva `JEVUnavailable` in attesa del collegamento fisico del motore locale completo).*
-
-## Memoria e Cronologia
-Laya Pro dispone di una gestione memoria avanzata (Memory RAG) basata su database SQLite. La dashboard offre l'opzione "Memoria Auto" per permettere all'Orchestratore di estrarre in background le preferenze dell'utente dalla conversazione e riutilizzarle nelle chat successive. Per dettagli vedi [MEMORY.md](docs/MEMORY.md).
+L'orchestratore non *sceglie* un motore: li **fuse**. Il ragionamento decide *cosa* dire, il modello veloce si limita a *dirlo*.
 
 ---
 
-## 🚀 Quickstart & Guide all'Installazione
+## Avvio rapido
 
-Scegli la guida in base al tuo ambiente operativo e scopri come configurare le API:
+```bash
+git clone https://github.com/mareknardella-lgtm/laya-pro.git
+cd laya-pro
 
-1. 🔑 **[Ottenere la API Key di NVIDIA Nemotron](docs/guides/NVIDIA_NEMOTRON_API_KEY.md)**
-2. 🧠 **[Scaricare e configurare il modello Laya originale](docs/guides/DOWNLOAD_LAYA.md)** (Riconoscimenti all'autore)
-3. 🪟 **[Guida all'installazione su Windows (tramite .venv)](docs/guides/INSTALL_LAYA_WINDOWS_VENV.md)**
-4. 🍏 **[Guida all'installazione su macOS](docs/INSTALLATION_MACOS.md)**
+python -m venv .venv
+# Windows:   .venv\Scripts\activate
+# macOS/Linux: source .venv/bin/activate
 
-## Struttura del Repository
+pip install -r requirements.txt
 
-```text
-README.md               # Questo file
-LICENSE                 # Licenza Apache 2.0
-backend/                # Core FastAPI, Orchestratore, Database
-frontend/               # Dashboard UI (HTML, CSS, Vanilla JS)
-docs/                   # Documentazione estesa e guide pratiche
-  ARCHITECTURE.md
-  AI_MODES.md
-  ...
-scripts/                # Script di avvio per Windows e macOS
+copy .env.example .env       # Windows
+cp .env.example .env         # macOS / Linux
+# poi metti la tua chiave NVIDIA in NEMOTRON_API_KEY
+
+python run.py --with-stub
 ```
 
-## Requisiti di Sistema
-- **Windows 10/11** (o **macOS 12+**)
-- **Python 3.9+** (consigliato 3.11)
-- Git e PowerShell (o Terminale per macOS)
-- Connessione a Internet per contattare le API NVIDIA
+Apri **http://127.0.0.1:8000**. Su Windows c'è anche `start.bat` (doppio clic).
 
-## Limiti Noti
-- L'indicizzazione vettoriale della memoria è semplificata tramite query SQL standard ed LLM text-filtering per evitare l'uso di engine vettoriali pesanti (es. ChromaDB).
-- Il routing verso Core ML per il modello Laya non è supportato in ambiente Windows.
+`--with-stub` avvia anche lo **stand-in di laya-coreml** in un processo separato: senza di esso funziona solo LOW, MEDIUM e HARD rispondono `503`. Vedi [docs/LAYA_COREML_STUB.md](docs/LAYA_COREML_STUB.md).
+
+---
+
+## Modalità
+
+| Modalità | Pipeline | Chiamate |
+|---|---|---|
+| **LOW** | Nemotron | 1 |
+| **MEDIUM** | `laya.reason` → Nemotron | 2 |
+| **HARD** | `laya.reason` → Nemotron → `laya.critique` → Nemotron | 3–5 |
+
+Ogni risposta include un `trace[]` con engine, latenza e dettaglio di ogni hop: il costo della fusione è visibile, non sottinteso.
+
+---
+
+## Stato onesto del progetto
+
+- **laya-coreml non è ancora un runtime Core ML locale.** Il repository contiene uno stand-in (`tools/laya_coreml_stub.py`) che rispetta il contratto HTTP ma chiama a sua volta Nemotron su internet. La separazione System 1 / System 2 è quindi oggi **architetturale, non di calcolo**: sostituire lo stand-in con il runtime vero è un cambio di implementazione dietro la stessa interfaccia.
+- **L'endpoint NVIDIA trial è un'istanza condivisa**: la prima risposta dopo some secondi di inattività costa 100–150 s. Il timeout di default è 120 s proprio per questo. Con un endpoint NIM dedicato la latenza scende di ordini di grandezza — misurala e abbassa `NEMOTRON_TIMEOUT_SECONDS`.
+- **La persistenza è SQLite** in `./data/laya.db` (gitignored). Nessun account, nessun servizio esterno oltre NVIDIA.
+
+---
+
+## Struttura
+
+```
+run.py                      launcher (funziona da qualsiasi directory)
+tools/laya_coreml_stub.py   stand-in del runtime di ragionamento
+backend/app/
+  chat/orchestrator.py      pipeline ibrida, cicli di revisione, trace
+  systems/laya/             adattore System 2 (contratto fail-closed)
+  systems/nemotron/         adattore System 1 (contratto fail-closed)
+  memory/                   estrazione fatti + retrieval lessicale
+  storage/sqlite.py         schema e connessione
+  observability/runtime.py  stato e latenze dei motori
+  api/routes/               chat, status, memory, sessions
+  static/                   UI ChatGPT-style
+backend/tests/              102 test
+docs/                       documentazione
+```
+
+---
+
+## Documentazione
+
+| Documento | Contenuto |
+|---|---|
+| [ARCHITECTURE.md](docs/ARCHITECTURE.md) | come i due motori si integrano, fail-closed, diagrammi |
+| [AI_MODES.md](docs/AI_MODES.md) | LOW / MEDIUM / HARD in dettaglio |
+| [API_REFERENCE.md](docs/API_REFERENCE.md) | endpoint, payload, codici di errore |
+| [MEMORY.md](docs/MEMORY.md) | estrazione, retrieval, voci pinnate |
+| [PROVIDERS.md](docs/PROVIDERS.md) | configurazione dei provider |
+| [LAYA_COREML_STUB.md](docs/LAYA_COREML_STUB.md) | il contratto del runtime di ragionamento |
+| [TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | errori comuni e come leggerli |
+| [DEVELOPMENT.md](docs/DEVELOPMENT.md) | ambiente di sviluppo e test |
+| [INSTALLATION_WINDOWS.md](docs/INSTALLATION_WINDOWS.md) / [INSTALLATION_MACOS.md](docs/INSTALLATION_MACOS.md) | installazione passo passo |
+
+---
 
 ## Test
-L'intero stack prevede test isolati (`pytest` per il backend e `jest` per il DOM frontend):
-```powershell
-python -m pytest backend/tests -v
+
+```bash
+python -m pytest backend/tests -q
 ```
 
-## Licenza
-Distribuito sotto **Apache License 2.0**. Vedi [LICENSE](LICENSE) e [NOTICE](NOTICE). Il modello Laya originale e le sue dipendenze PyTorch seguono i termini definiti dal creatore e dai rispettivi fornitori.
+La CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) esegue la suite su Python 3.9 e uno smoke test del launcher da un'altra directory.
+
+---
+
+## Sicurezza
+
+`.env` e `data/` sono gitignored: la chiave NVIDIA non entra mai nel repository. Vedi [SECURITY.md](SECURITY.md).

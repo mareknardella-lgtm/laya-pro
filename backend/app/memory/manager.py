@@ -1,142 +1,130 @@
-"""Project memory manager; all writes are explicit and secrets are rejected."""
+"""Long-term memory: extraction through the fast tier, retrieval by lexical scoring.
+
+Retrieval deliberately avoids an extra model call: a deterministic keyword
+score narrows the store to a handful of candidates, and only those candidates
+are allowed into the prompt. This keeps the memory path off the critical
+latency budget of the fast tier.
+"""
 
 from __future__ import annotations
 
-import json
 import re
-import threading
-import time
-from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Iterable, List, Sequence, Tuple
 
-from ..context.project_context import ProjectContextManager, ProjectContextError
-from ..observability.audit import AuditEvent, AuditLog
+from ..systems.nemotron.adapter import NemotronAdapter
+from ..systems.nemotron.models import RenderRole
 from .models import MemoryEntry, MemoryScope
 from .store import MemoryStore
 
-_SECRET_KEY = re.compile(r"(password|secret|token|credential|api[_-]?key|private[_-]?key|access[_-]?key|authorization)", re.IGNORECASE)
-_SECRET_VALUE = re.compile(
-    r"(-----BEGIN [A-Z ]*PRIVATE KEY-----|\bBearer\s+[A-Za-z0-9._~+/=-]{12,}|\b(?:sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16})\b)",
-    re.IGNORECASE,
-)
+_TOKEN_RE = re.compile(r"[\w']+", re.UNICODE)
+_STOPWORDS = {
+    "il", "lo", "la", "i", "gli", "le", "un", "una", "uno", "di", "a", "da", "in",
+    "con", "su", "per", "tra", "fra", "e", "o", "ma", "che", "non", "sono", "sono",
+    "the", "a", "an", "of", "to", "in", "on", "for", "with", "and", "or", "is",
+    "are", "my", "your", "i", "you", "we", "it", "this", "that",
+}
 
 
-class MemoryValidationError(ValueError):
-    """Memory is invalid, too large, or appears to contain sensitive data."""
+def tokenize(text: str) -> List[str]:
+    return [
+        token.lower()
+        for token in _TOKEN_RE.findall(text)
+        if len(token) > 2 and token.lower() not in _STOPWORDS
+    ]
 
 
 class MemoryManager:
     def __init__(
         self,
-        projects: ProjectContextManager,
         store: MemoryStore,
-        audit: AuditLog,
-        max_value_chars: int = 8_000,
-        temporary_ttl_seconds: int = 3_600,
+        nemotron: NemotronAdapter,
+        max_context_entries: int = 8,
+        max_pinned_entries: int = 4,
     ) -> None:
-        self._projects = projects
         self._store = store
-        self._audit = audit
-        self._max_value_chars = max_value_chars
-        self._temporary_ttl = temporary_ttl_seconds
-        self._temporary: dict[tuple[str, str], tuple[float, MemoryEntry]] = {}
-        self._lock = threading.RLock()
+        self._nemotron = nemotron
+        self._max_context_entries = max_context_entries
+        self._max_pinned_entries = max_pinned_entries
 
-    def put(self, project_id: str, key: str, value: Any, scope: MemoryScope = MemoryScope.TEMPORARY, actor_id: str = "local-operator") -> MemoryEntry:
-        if project_id != "__global__":
-            if project_id != "__global__": self._projects.resolve(project_id)
-        self._validate_key(key)
-        encoded = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-        if len(encoded) > self._max_value_chars:
-            raise MemoryValidationError("Memory value exceeds the configured size limit")
-        self._reject_sensitive(value)
-        now = datetime.now(timezone.utc)
-        if scope == MemoryScope.PERSISTENT:
-            entry = self._store.put(project_id, key, value)
-        else:
-            entry = MemoryEntry(
-                project_id=project_id,
-                key=key,
-                value=value,
-                scope=MemoryScope.TEMPORARY,
-                created_at=now,
-                updated_at=now,
+    async def extract(self, turns: Sequence[dict]) -> List[MemoryEntry]:
+        """Ask the fast tier for durable facts. Failures are non-fatal."""
+
+        transcript = "\n".join(
+            f"{turn.get('role', 'user')}: {turn.get('content', '')}" for turn in turns
+        ).strip()
+        if not transcript:
+            return []
+
+        try:
+            text = await self._nemotron.render(
+                prompt=transcript, role=RenderRole.EXTRACT
             )
-            with self._lock:
-                self._expire_temporary()
-                self._temporary[(project_id, key)] = (time.monotonic() + self._temporary_ttl, entry)
-        self._audit.record(AuditEvent(
-            actor_id=actor_id,
-            event_type="memory.saved",
-            project_id=project_id,
-            resource_id=f"{project_id}:{key}",
-            status="stored",
-            details={"project_id": project_id, "key": key, "scope": scope.value, "value_bytes": len(encoded)},
-        ))
-        return entry
+        except Exception:
+            return []
 
-    def get(self, project_id: str, key: str, scope: MemoryScope = MemoryScope.PERSISTENT) -> Optional[MemoryEntry]:
-        if project_id != "__global__": self._projects.resolve(project_id)
-        self._validate_key(key)
-        if scope == MemoryScope.PERSISTENT:
-            return self._store.get(project_id, key)
-        with self._lock:
-            self._expire_temporary()
-            item = self._temporary.get((project_id, key))
-            return item[1] if item else None
+        return self._store.parse_extraction(text)
 
-    def list(self, project_id: str, scope: MemoryScope = MemoryScope.PERSISTENT, limit: int = 100) -> list[MemoryEntry]:
-        if project_id != "__global__": self._projects.resolve(project_id)
-        if scope == MemoryScope.PERSISTENT:
-            return self._store.list(project_id, limit)
-        with self._lock:
-            self._expire_temporary()
-            values = [entry for (owner, _key), (_expiry, entry) in self._temporary.items() if owner == project_id]
-        return sorted(values, key=lambda entry: entry.key)[:max(1, min(limit, 500))]
+    async def remember(self, entries: Iterable[MemoryEntry]) -> int:
+        materialized = list(entries)
+        if not materialized:
+            return 0
+        return await self._store.put_many(materialized)
 
-    def delete(self, project_id: str, key: str, scope: MemoryScope = MemoryScope.PERSISTENT, actor_id: str = "local-operator") -> bool:
-        if project_id != "__global__": self._projects.resolve(project_id)
-        self._validate_key(key)
-        if scope == MemoryScope.PERSISTENT:
-            deleted = self._store.delete(project_id, key)
-        else:
-            with self._lock:
-                deleted = self._temporary.pop((project_id, key), None) is not None
-        if deleted:
-            self._audit.record(AuditEvent(
-                actor_id=actor_id,
-                event_type="memory.deleted",
-                project_id=project_id,
-                resource_id=f"{project_id}:{key}",
-                status="deleted",
-                details={"project_id": project_id, "key": key, "scope": scope.value},
-            ))
-        return deleted
+    async def retrieve(self, query: str, history: Sequence[dict] = ()) -> Tuple[str, int]:
+        """Return (context block, number of entries used) for the given query.
 
-    @staticmethod
-    def _validate_key(key: str) -> None:
-        if not key or len(key) > 128 or not re.fullmatch(r"[A-Za-z0-9_.-]+", key):
-            raise MemoryValidationError("Memory keys must be bounded identifiers")
-        if _SECRET_KEY.search(key):
-            raise MemoryValidationError("Memory keys that indicate credentials or secrets are forbidden")
+        Pinned facts are always included: the user added them on purpose, so
+        they are relevant regardless of how the question is worded. Extracted
+        facts still have to match the question's vocabulary, otherwise every
+        chat would drag along the entire memory store.
+        """
 
-    @classmethod
-    def _reject_sensitive(cls, value: Any, depth: int = 0) -> None:
-        if depth > 8:
-            raise MemoryValidationError("Memory nesting is too deep")
-        if isinstance(value, dict):
-            for key, child in value.items():
-                if _SECRET_KEY.search(str(key)):
-                    raise MemoryValidationError("Sensitive fields are not saved to project memory")
-                cls._reject_sensitive(child, depth + 1)
-        elif isinstance(value, (list, tuple)):
-            for child in value:
-                cls._reject_sensitive(child, depth + 1)
-        elif isinstance(value, str) and (value.strip().lower() in {"secret", "password", "credential"} or _SECRET_VALUE.search(value)):
-            raise MemoryValidationError("Memory value appears to contain a secret and was not saved")
+        entries = await self._store.all(MemoryScope.PERSISTENT)
+        if not entries:
+            return "", 0
 
-    def _expire_temporary(self) -> None:
-        now = time.monotonic()
-        expired = [key for key, (deadline, _entry) in self._temporary.items() if deadline <= now]
-        for key in expired:
-            self._temporary.pop(key, None)
+        pinned = [entry for entry in entries if entry.pinned][: self._max_pinned_entries]
+        pinned_keys = {entry.key for entry in pinned}
+
+        haystack_tokens = set(tokenize(query))
+        for turn in history[-5:]:
+            haystack_tokens.update(tokenize(str(turn.get("content", ""))))
+
+        scored = [
+            (entry, _score(entry, haystack_tokens))
+            for entry in entries
+            if entry.key not in pinned_keys
+        ]
+        matches = [
+            entry for entry, score in sorted(scored, key=lambda pair: pair[1], reverse=True)
+            if score > 0
+        ]
+        room = max(0, self._max_context_entries - len(pinned))
+        selected = pinned + matches[:room]
+        if not selected:
+            return "", 0
+
+        block = "\n".join(f"- {entry.key}: {entry.value}" for entry in selected)
+        return block, len(selected)
+
+    async def query(self, query: str, limit: int = 10) -> List[MemoryEntry]:
+        """Direct RAG lookup used by the /memory/query endpoint."""
+
+        entries = await self._store.all(MemoryScope.PERSISTENT)
+        tokens = set(tokenize(query))
+        scored = [(entry, _score(entry, tokens)) for entry in entries]
+        hits = [entry for entry, score in sorted(scored, key=lambda pair: pair[1], reverse=True) if score > 0]
+        return hits[:limit]
+
+
+def _score(entry: MemoryEntry, tokens: Iterable[str]) -> float:
+    token_set = set(tokens)
+    if not token_set:
+        return 0.0
+    entry_tokens = set(tokenize(f"{entry.key} {entry.value}"))
+    if not entry_tokens:
+        return 0.0
+    overlap = len(entry_tokens & token_set)
+    if overlap == 0:
+        return 0.0
+    return overlap / (len(token_set) ** 0.5)

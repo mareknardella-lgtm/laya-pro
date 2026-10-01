@@ -1,6 +1,7 @@
-"""Typed decision contract for normalized Laya System 1 output.
+"""Typed contract for laya-coreml deep reasoning.
 
-This is Laya Pro's adapter contract, not a claim about an external runtime's native schema.
+This is the orchestrator's own contract with the runtime. It carries provenance
+so a response can never imply a reasoning pass that did not happen.
 """
 
 from __future__ import annotations
@@ -12,67 +13,93 @@ from uuid import uuid4
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
-class DecisionKind(str, Enum):
-    ACTION = "ACTION"
-    CLARIFICATION_REQUIRED = "CLARIFICATION_REQUIRED"
-    REJECT = "REJECT"
-    NO_ACTION = "NO_ACTION"
-    DONE = "DONE"
-    CONTINUE = "CONTINUE"
+class ReasoningDepth(str, Enum):
+    STANDARD = "standard"
+    """MEDIUM tier: decompose into a short plan."""
+
+    DEEP = "deep"
+    """HARD tier: cross-check constraints and produce a multi-step plan."""
 
 
-class DecisionRequest(BaseModel):
+class ReasoningRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     request_id: str = Field(default_factory=lambda: str(uuid4()), min_length=1, max_length=128)
-    user_input: str = Field(min_length=1, max_length=12_000)
-    project_id: Optional[str] = Field(default=None, min_length=1, max_length=64)
-    workflow_id: Optional[str] = Field(default=None, min_length=1, max_length=128)
+    problem: str = Field(min_length=1, max_length=32_000)
+    depth: ReasoningDepth = ReasoningDepth.STANDARD
+    intent: Optional[str] = Field(default=None, max_length=500)
     context: dict[str, Any] = Field(default_factory=dict)
-    iteration: int = Field(default=0, ge=0, le=64)
-    execute: bool = False
-    approval_id: Optional[str] = Field(default=None, min_length=1, max_length=128)
 
     @field_validator("context")
     @classmethod
-    def context_size_is_bounded(cls, value: dict[str, Any]) -> dict[str, Any]:
-        if len(str(value)) > 16_000:
-            raise ValueError("Decision context is too large")
+    def bounded_context(cls, value: dict[str, Any]) -> dict[str, Any]:
+        if len(str(value)) > 32_000:
+            raise ValueError("Reasoning context is too large")
         return value
 
 
-class LayaDecision(BaseModel):
+class ReasoningStep(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
-    kind: DecisionKind
-    reason: str = Field(min_length=1, max_length=2_000)
-    action_id: Optional[str] = Field(default=None, min_length=1, max_length=128)
-    parameters: dict[str, Any] = Field(default_factory=dict)
-    relevant_context: dict[str, Any] = Field(default_factory=dict)
-    missing_information: list[str] = Field(default_factory=list, max_length=32)
+    goal: str = Field(min_length=1, max_length=1_000)
+    rationale: str = Field(min_length=1, max_length=4_000)
+    expected_output: str = Field(min_length=1, max_length=2_000)
+
+
+class ReasoningPlan(BaseModel):
+    """A validated, executable plan produced by the deep reasoning runtime."""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
     request_id: str = Field(min_length=1, max_length=128)
+    steps: list[ReasoningStep] = Field(min_length=1, max_length=32)
+    conclusion: str = Field(min_length=1, max_length=8_000)
+    confidence: float = Field(ge=0.0, le=1.0)
+    depth: ReasoningDepth = ReasoningDepth.STANDARD
+    assumptions: list[str] = Field(default_factory=list, max_length=32)
+    open_questions: list[str] = Field(default_factory=list, max_length=32)
+    engine: str = Field(default="laya-coreml", min_length=1, max_length=128)
+    runtime_configured: bool = True
 
     @model_validator(mode="after")
-    def enforce_kind_contract(self) -> "LayaDecision":
-        if self.kind in {DecisionKind.ACTION, DecisionKind.CONTINUE}:
-            if not self.action_id:
-                raise ValueError("ACTION and CONTINUE require an action_id")
-            if not self.parameters:
-                raise ValueError("ACTION and CONTINUE require non-empty, validatable parameters")
-        elif self.action_id is not None or self.parameters:
-            raise ValueError("Non-operational decisions must not contain an action_id or parameters")
-        if self.kind == DecisionKind.CLARIFICATION_REQUIRED and not self.missing_information:
-            raise ValueError("CLARIFICATION_REQUIRED must specify missing_information")
-        if self.kind != DecisionKind.CLARIFICATION_REQUIRED and self.missing_information:
-            raise ValueError("missing_information is valid only for CLARIFICATION_REQUIRED")
+    def enforce_depth_contract(self) -> "ReasoningPlan":
+        if self.depth is ReasoningDepth.DEEP and len(self.steps) < 2:
+            raise ValueError("A deep plan requires at least two steps")
+        if not self.runtime_configured:
+            raise ValueError("A response cannot claim that the configured runtime is unavailable")
         return self
 
 
-class DecisionEnvelope(BaseModel):
-    """Normalized response with provenance; no runtime is implied by the schema."""
+class CritiqueVerdict(str, Enum):
+    APPROVED = "approved"
+    REVISIONS_REQUIRED = "revisions_required"
+    REJECTED = "rejected"
 
-    model_config = ConfigDict(extra="forbid")
 
-    decision: LayaDecision
-    engine: str = "laya-system-1"
-    runtime_configured: bool
+class CritiqueRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    request_id: str = Field(default_factory=lambda: str(uuid4()), min_length=1, max_length=128)
+    draft: str = Field(min_length=1, max_length=65_536)
+    plan: ReasoningPlan
+    requirements: list[str] = Field(default_factory=list, max_length=32)
+
+
+class Critique(BaseModel):
+    """A structured judgement of a draft answer against its plan."""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    request_id: str = Field(min_length=1, max_length=128)
+    verdict: CritiqueVerdict
+    issues: list[str] = Field(default_factory=list, max_length=32)
+    summary: str = Field(min_length=1, max_length=4_000)
+    engine: str = Field(default="laya-coreml", min_length=1, max_length=128)
+
+    @model_validator(mode="after")
+    def enforce_verdict_contract(self) -> "Critique":
+        if self.verdict is CritiqueVerdict.REVISIONS_REQUIRED and not self.issues:
+            raise ValueError("REVISIONS_REQUIRED must list at least one issue")
+        if self.verdict is CritiqueVerdict.APPROVED and self.issues:
+            raise ValueError("APPROVED must not list issues")
+        return self
