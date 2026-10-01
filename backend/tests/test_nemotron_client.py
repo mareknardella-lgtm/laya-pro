@@ -292,3 +292,47 @@ def test_a_legitimate_answer_that_quotes_terms_is_not_an_echo():
     )
 
     assert is_degenerate(answer, prompt) is False
+
+def test_leaked_chat_template_tail_is_stripped():
+    """Seen live: the endpoint returned its own template before the answer."""
+
+    from backend.app.systems.nemotron.client import strip_thinking_artifacts
+
+    leaked = (
+        "EOS\n"
+        "</think>UUID.\n"
+        "</think>Istruzioni: il modulo usa PostgreSQL e JWT.\n\n"
+        "Primo passo: estrarre le credenziali in un modulo separato."
+    )
+
+    assert strip_thinking_artifacts(leaked) == (
+        "Istruzioni: il modulo usa PostgreSQL e JWT.\n\n"
+        "Primo passo: estrarre le credenziali in un modulo separato."
+    )
+
+
+def test_a_clean_answer_is_left_untouched():
+    from backend.app.systems.nemotron.client import strip_thinking_artifacts
+
+    answer = "  Il piano prevede tre passaggi: leggere, validare, scrivere.  "
+
+    assert strip_thinking_artifacts(answer) == (
+        "Il piano prevede tre passaggi: leggere, validare, scrivere."
+    )
+
+
+def test_a_thinking_closer_inside_the_answer_is_not_a_tearing_point():
+    """Only the head is scanned, so real prose is never cut in half."""
+
+    from backend.app.systems.nemotron.client import strip_thinking_artifacts
+
+    answer = "Qui descrivo i dati. " + ("padding. " * 200) + "Fine </think> del ragionamento."
+
+    assert strip_thinking_artifacts(answer) == answer.strip()
+
+
+def test_template_artifacts_alone_are_a_contract_error(settings):
+    """Nothing left after stripping means there was no answer to begin with."""
+
+    with pytest.raises(NemotronContractError):
+        run(call(settings, completion("EOS\n</think>UUID.\n</think>")))

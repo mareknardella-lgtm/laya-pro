@@ -19,6 +19,35 @@ _MAX_REPEATED_FRAGMENT = 5
 _MAX_TOKEN_DOMINANCE = 0.35
 _ECHO_WINDOW = 60
 
+# How far into the answer a leaked template tail is looked for. Anything
+# further down is prose the model meant to write.
+_ARTIFACT_WINDOW = 600
+_THINKING_CLOSER = "</think>"
+
+
+def strip_thinking_artifacts(text: str) -> str:
+    """Cut the chat-template tail that sometimes precedes the real answer.
+
+    With ``enable_thinking`` disabled the endpoint still occasionally returns
+    the end of its own template in ``content`` ("EOS", "</think>UUID.") before
+    the answer starts. That text was never meant for the user and shipping it
+    makes the model look broken, so it is removed rather than rendered.
+
+    Deliberately narrow: only a leading ``EOS`` line and a ``</think>`` near the
+    start are removed. A closer further down would be part of the answer.
+    """
+
+    cleaned = text.lstrip()
+    first, separator, rest = cleaned.partition("\n")
+    if first.strip() == "EOS":
+        cleaned = rest.lstrip()
+
+    index = cleaned[:_ARTIFACT_WINDOW].rfind(_THINKING_CLOSER)
+    if index != -1:
+        cleaned = cleaned[index + len(_THINKING_CLOSER):].lstrip()
+
+    return cleaned.strip()
+
 
 def is_degenerate(text: str, prompt: str = "") -> bool:
     """Cheap repetition check; deliberately conservative to avoid false alarms.
@@ -157,9 +186,15 @@ def _extract_completion(payload: dict[str, Any], request_id: str) -> dict[str, A
     if not isinstance(text, str) or not text.strip():
         raise NemotronContractError("Nemotron returned an empty completion")
 
+    cleaned = strip_thinking_artifacts(text)
+    if not cleaned:
+        raise NemotronContractError(
+            "Nemotron returned only template artifacts, no answer text"
+        )
+
     return {
         "request_id": request_id,
-        "text": text.strip(),
+        "text": cleaned,
         "engine": str(payload.get("model") or "nemotron"),
     }
 
